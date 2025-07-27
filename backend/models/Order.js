@@ -1,146 +1,124 @@
 const mongoose = require('mongoose');
 
 const orderSchema = new mongoose.Schema({
-  // Order Identification
-  orderId: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true
-  },
+  // User and order identification
   userAddress: {
     type: String,
     required: true,
     lowercase: true,
     index: true
   },
+  orderId: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true
+  },
   
-  // Order Details
+  // Order details
   sellToken: {
     address: { type: String, required: true, lowercase: true },
-    symbol: { type: String, required: true, uppercase: true },
+    symbol: { type: String, required: true },
     decimals: { type: Number, required: true }
   },
   buyToken: {
     address: { type: String, required: true, lowercase: true },
-    symbol: { type: String, required: true, uppercase: true },
+    symbol: { type: String, required: true },
     decimals: { type: Number, required: true }
   },
   
-  // Amounts and Pricing
+  // Amounts and pricing
   sellAmount: {
-    type: String, // Use string for big numbers
+    type: String, // Using string to handle large numbers
     required: true
   },
   buyAmount: {
-    type: String, // Use string for big numbers
+    type: String, // Minimum amount to receive
     required: true
   },
   price: {
-    type: Number, // Calculated price for matching
+    type: Number, // Price = buyAmount / sellAmount
     required: true,
     index: true
   },
   
-  // Chain Information
+  // Chain information
   sourceChain: {
-    type: Number, // Chain ID
+    type: String,
     required: true,
-    index: true
+    enum: ['ethereum', 'polygon', 'arbitrum', 'localhost']
   },
   targetChain: {
-    type: Number, // Chain ID
+    type: String,
     required: true,
-    index: true
+    enum: ['ethereum', 'polygon', 'arbitrum', 'localhost']
   },
   
-  // Order Lifecycle
+  // Order lifecycle
   orderStatus: {
     type: String,
-    enum: ['open', 'partially_filled', 'filled', 'cancelled', 'expired'],
+    required: true,
+    enum: ['open', 'matched', 'filled', 'cancelled', 'expired'],
     default: 'open',
     index: true
   },
   
-  // Execution Details
-  filledAmount: {
-    type: String,
-    default: '0'
-  },
-  remainingAmount: {
+  // Signature and validation
+  signature: {
     type: String,
     required: true
-  },
-  
-  // Timestamps
-  expiryTime: {
-    type: Date,
-    required: true,
-    index: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now,
-    index: true
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  },
-  
-  // Signature and Security
-  signature: {
-    v: Number,
-    r: String,
-    s: String,
-    signatureType: { type: String, default: 'EIP712' }
   },
   nonce: {
     type: String,
     required: true
   },
   
-  // Optional Features
-  allowPartialFill: {
-    type: Boolean,
-    default: true
+  // Timestamps
+  createdAt: {
+    type: Date,
+    default: Date.now,
+    index: true
   },
-  minFillAmount: {
+  expiresAt: {
+    type: Date,
+    required: true,
+    index: true
+  },
+  filledAt: {
+    type: Date
+  },
+  
+  // Execution details
+  fillAmount: {
     type: String,
     default: '0'
   },
+  executionTxHash: {
+    type: String
+  },
   
-  // Execution History
-  executionHistory: [{
-    txHash: String,
-    blockNumber: Number,
-    executedAmount: String,
-    executedAt: Date,
-    gasCost: String
+  // Matching information
+  matchedWith: [{
+    orderId: String,
+    matchedAmount: String,
+    matchedAt: Date
   }]
 }, {
   timestamps: true
 });
 
-// Indexes for efficient querying
+// Indexes for performance
 orderSchema.index({ sellToken: 1, buyToken: 1 });
-orderSchema.index({ sourceChain: 1, targetChain: 1 });
 orderSchema.index({ price: 1, orderStatus: 1 });
-orderSchema.index({ expiryTime: 1, orderStatus: 1 });
+orderSchema.index({ expiresAt: 1 });
+orderSchema.index({ createdAt: -1 });
 
-// Methods
-orderSchema.methods.isExpired = function() {
-  return new Date() > this.expiryTime;
-};
-
-orderSchema.methods.isActive = function() {
-  return this.orderStatus === 'open' || this.orderStatus === 'partially_filled';
-};
-
-orderSchema.methods.canFill = function(amount) {
-  const remaining = BigInt(this.remainingAmount);
-  const requested = BigInt(amount);
-  return requested <= remaining;
-};
+// Pre-save middleware to generate orderId
+orderSchema.pre('save', function(next) {
+  if (!this.orderId) {
+    this.orderId = `order_${this.userAddress}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+  next();
+});
 
 module.exports = mongoose.model('Order', orderSchema); 

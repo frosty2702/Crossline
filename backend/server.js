@@ -1,294 +1,65 @@
-require('dotenv').config();
 const express = require('express');
+const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const http = require('http');
-const socketIo = require('socket.io');
-
-// Database and blockchain setup
-const connectDB = require('./config/database');
-const { initializeProviders } = require('./config/blockchain');
-
-// Services
-const { createMatchingEngine } = require('./services/matchingEngine');
-
-// Routes
-const orderRoutes = require('./routes/orders');
-const orderbookRoutes = require('./routes/orderbook');
-// const userRoutes = require('./routes/users'); // To be created
-// const matchRoutes = require('./routes/matches'); // To be created
+require('dotenv').config();
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, {
-  cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
-    methods: ["GET", "POST"]
-  }
-});
-
-// Connect to MongoDB
-connectDB();
-
-// Initialize blockchain providers
-initializeProviders();
-
-// Initialize matching engine
-const matchingEngine = createMatchingEngine(io);
+const PORT = process.env.PORT || 3000;
 
 // Security middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
-    },
-  },
-}));
+app.use(helmet());
+app.use(cors());
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
-  message: {
-    error: 'Too many requests from this IP, please try again later.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
 });
-
 app.use(limiter);
-
-// CORS configuration
-app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:3000",
-  credentials: true
-}));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-// Request logging middleware
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - IP: ${req.ip}`);
-  next();
-});
+// MongoDB connection
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/crossline', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('✅ Connected to MongoDB'))
+.catch(err => console.error('❌ MongoDB connection error:', err));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
+  res.json({ 
+    status: 'ok', 
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development'
+    service: 'crossline-backend'
   });
 });
 
-// API info endpoint
-app.get('/api/info', (req, res) => {
-  res.json({
-    name: 'Crossline API',
-    version: '1.0.0',
-    description: 'Cross-chain gasless limit orders with MEV protection',
-    supportedChains: [1, 137, 42161, 31337],
-    features: [
-      'Custom limit orders',
-      'Cross-chain execution',
-      'MEV protection',
-      'Real-time order book',
-      'Trade history'
-    ],
-    endpoints: {
-      orders: '/api/orders',
-      orderbook: '/api/orderbook',
-      users: '/api/users',
-      matches: '/api/matches'
-    }
-  });
-});
-
-// Matching engine stats endpoint
-app.get('/api/matching/stats', async (req, res) => {
-  try {
-    const stats = await matchingEngine.getStats();
-    res.json({
-      success: true,
-      stats
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to get matching engine stats',
-      message: error.message
-    });
-  }
-});
-
-// Control matching engine
-app.post('/api/matching/start', (req, res) => {
-  try {
-    matchingEngine.start();
-    res.json({
-      success: true,
-      message: 'Matching engine started'
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to start matching engine',
-      message: error.message
-    });
-  }
-});
-
-app.post('/api/matching/stop', (req, res) => {
-  try {
-    matchingEngine.stop();
-    res.json({
-      success: true,
-      message: 'Matching engine stopped'
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: 'Failed to stop matching engine',
-      message: error.message
-    });
-  }
-});
-
-// API Routes
-app.use('/api/orders', orderRoutes);
-app.use('/api/orderbook', orderbookRoutes);
-// app.use('/api/users', userRoutes); // To be created
-// app.use('/api/matches', matchRoutes); // To be created
-
-// Temporary test routes for development
-app.get('/api/test', (req, res) => {
-  res.json({
-    message: 'Crossline API is running!',
-    timestamp: new Date().toISOString(),
-    availableRoutes: [
-      'POST /api/orders - Submit new order',
-      'GET /api/orders - Get orders with filtering',
-      'GET /api/orders/:orderId - Get specific order',
-      'DELETE /api/orders/:orderId - Cancel order',
-      'GET /api/orderbook/:tokenPair - Get order book',
-      'GET /api/orderbook - Get trading pairs',
-      'GET /api/matching/stats - Get matching engine stats',
-      'POST /api/matching/start - Start matching engine',
-      'POST /api/matching/stop - Stop matching engine'
-    ]
-  });
-});
-
-// Socket.IO for real-time updates
-io.on('connection', (socket) => {
-  console.log(`Client connected: ${socket.id}`);
-  
-  socket.on('subscribe_orderbook', (tokenPair) => {
-    socket.join(`orderbook_${tokenPair}`);
-    console.log(`Client ${socket.id} subscribed to orderbook: ${tokenPair}`);
-  });
-  
-  socket.on('subscribe_user_orders', (userAddress) => {
-    socket.join(`user_${userAddress.toLowerCase()}`);
-    console.log(`Client ${socket.id} subscribed to user orders: ${userAddress}`);
-  });
-  
-  socket.on('disconnect', () => {
-    console.log(`Client disconnected: ${socket.id}`);
-  });
-});
-
-// Make io available to routes
-app.set('io', io);
+// API routes
+app.use('/api/orders', require('./routes/orders'));
+app.use('/api/orderbook', require('./routes/orderbook'));
+app.use('/api/trades', require('./routes/trades'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  
-  // Mongoose validation error
-  if (err.name === 'ValidationError') {
-    const errors = Object.values(err.errors).map(e => e.message);
-    return res.status(400).json({
-      error: 'Validation Error',
-      details: errors
-    });
-  }
-  
-  // MongoDB duplicate key error
-  if (err.code === 11000) {
-    return res.status(400).json({
-      error: 'Duplicate Error',
-      message: 'Resource already exists'
-    });
-  }
-  
-  // JWT errors
-  if (err.name === 'JsonWebTokenError') {
-    return res.status(401).json({
-      error: 'Invalid Token',
-      message: 'Please provide a valid authentication token'
-    });
-  }
-  
-  // Default error
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  console.error(err.stack);
+  res.status(500).json({ 
+    error: 'Something went wrong!',
+    ...(process.env.NODE_ENV === 'development' && { details: err.message })
   });
 });
 
 // 404 handler
 app.use('*', (req, res) => {
-  res.status(404).json({
-    error: 'Not Found',
-    message: `Route ${req.originalUrl} not found`
-  });
+  res.status(404).json({ error: 'Route not found' });
 });
 
-const PORT = process.env.PORT || 3000;
-
-server.listen(PORT, () => {
-  console.log(`
-🚀 Crossline API Server Running!
-📍 Port: ${PORT}
-🌍 Environment: ${process.env.NODE_ENV || 'development'}
-🎯 Health Check: http://localhost:${PORT}/health
-📊 API Info: http://localhost:${PORT}/api/info
-📝 Test Endpoint: http://localhost:${PORT}/api/test
-⚡ Socket.IO: Ready for real-time connections
-
-🔗 Available API Endpoints:
-   POST   /api/orders              - Submit new order
-   GET    /api/orders              - Get orders (with filtering)
-   GET    /api/orders/:id          - Get specific order
-   DELETE /api/orders/:id          - Cancel order
-   GET    /api/orderbook/:pair     - Get order book
-   GET    /api/orderbook           - Get trading pairs
-   GET    /api/matching/stats      - Matching engine stats
-   POST   /api/matching/start      - Start matching engine
-   POST   /api/matching/stop       - Stop matching engine
-  `);
-
-  // Start the matching engine automatically
-  console.log('🔄 Starting matching engine...');
-  setTimeout(() => {
-    matchingEngine.start();
-  }, 2000); // Start after 2 seconds to ensure DB is ready
-
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  matchingEngine.stop();
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
-
-module.exports = { app, server, io }; 
+app.listen(PORT, () => {
+  console.log(`🚀 Crossline Backend running on port ${PORT}`);
+  console.log(`📊 Health check: http://localhost:${PORT}/health`);
+}); 
