@@ -1,0 +1,33 @@
+{
+  "name": "crossline",
+  "version": "1.0.0",
+  "description": "Cross-chain gasless limit orders with MEV protection",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "deploy:polygon": "hardhat run scripts/deploy.js --network polygon",
+    "demo": "hardhat run scripts/demo.js --network localhost",
+    "node": "hardhat node",
+    "clean": "hardhat clean"
+  },
+  "keywords": ["defi", "cross-chain", "limit-orders", "mev-protection", "gasless"],
+  "author": "Crossline Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@openzeppelin/hardhat-upgrades": "^3.0.0",
+    "hardhat": "^2.19.0",
+    "dotenv": "^16.3.0"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0",
+    "@openzeppelin/contracts-upgradeable": "^5.0.0",
+    "@layerzerolabs/contracts": "^2.0.0",
+    "@axelar-network/axelar-gmp-sdk-solidity": "^5.6.0",
+    "@1inch/limit-order-protocol": "^4.0.0",
+    "ethers": "^6.8.0"
+  }
+} 
