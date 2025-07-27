@@ -10,10 +10,11 @@ const socketIo = require('socket.io');
 const connectDB = require('./config/database');
 const { initializeProviders } = require('./config/blockchain');
 
-// Routes (to be created)
-// const orderRoutes = require('./routes/orders');
-// const userRoutes = require('./routes/users');
-// const matchRoutes = require('./routes/matches');
+// Routes
+const orderRoutes = require('./routes/orders');
+const orderbookRoutes = require('./routes/orderbook');
+// const userRoutes = require('./routes/users'); // To be created
+// const matchRoutes = require('./routes/matches'); // To be created
 
 const app = express();
 const server = http.createServer(app);
@@ -97,23 +98,32 @@ app.get('/api/info', (req, res) => {
     ],
     endpoints: {
       orders: '/api/orders',
+      orderbook: '/api/orderbook',
       users: '/api/users',
-      matches: '/api/matches',
-      orderbook: '/api/orderbook'
+      matches: '/api/matches'
     }
   });
 });
 
-// API Routes (placeholder - will be uncommented as we create them)
-// app.use('/api/orders', orderRoutes);
-// app.use('/api/users', userRoutes);
-// app.use('/api/matches', matchRoutes);
+// API Routes
+app.use('/api/orders', orderRoutes);
+app.use('/api/orderbook', orderbookRoutes);
+// app.use('/api/users', userRoutes); // To be created
+// app.use('/api/matches', matchRoutes); // To be created
 
 // Temporary test routes for development
 app.get('/api/test', (req, res) => {
   res.json({
     message: 'Crossline API is running!',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    availableRoutes: [
+      'POST /api/orders - Submit new order',
+      'GET /api/orders - Get orders with filtering',
+      'GET /api/orders/:orderId - Get specific order',
+      'DELETE /api/orders/:orderId - Cancel order',
+      'GET /api/orderbook/:tokenPair - Get order book',
+      'GET /api/orderbook - Get trading pairs'
+    ]
   });
 });
 
@@ -192,7 +202,16 @@ server.listen(PORT, () => {
 🌍 Environment: ${process.env.NODE_ENV || 'development'}
 🎯 Health Check: http://localhost:${PORT}/health
 📊 API Info: http://localhost:${PORT}/api/info
+📝 Test Endpoint: http://localhost:${PORT}/api/test
 ⚡ Socket.IO: Ready for real-time connections
+
+🔗 Available API Endpoints:
+   POST   /api/orders          - Submit new order
+   GET    /api/orders          - Get orders (with filtering)
+   GET    /api/orders/:id      - Get specific order
+   DELETE /api/orders/:id      - Cancel order
+   GET    /api/orderbook/:pair - Get order book
+   GET    /api/orderbook       - Get trading pairs
   `);
 });
 
