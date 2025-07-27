@@ -10,6 +10,9 @@ const socketIo = require('socket.io');
 const connectDB = require('./config/database');
 const { initializeProviders } = require('./config/blockchain');
 
+// Services
+const { createMatchingEngine } = require('./services/matchingEngine');
+
 // Routes
 const orderRoutes = require('./routes/orders');
 const orderbookRoutes = require('./routes/orderbook');
@@ -30,6 +33,9 @@ connectDB();
 
 // Initialize blockchain providers
 initializeProviders();
+
+// Initialize matching engine
+const matchingEngine = createMatchingEngine(io);
 
 // Security middleware
 app.use(helmet({
@@ -105,6 +111,53 @@ app.get('/api/info', (req, res) => {
   });
 });
 
+// Matching engine stats endpoint
+app.get('/api/matching/stats', async (req, res) => {
+  try {
+    const stats = await matchingEngine.getStats();
+    res.json({
+      success: true,
+      stats
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to get matching engine stats',
+      message: error.message
+    });
+  }
+});
+
+// Control matching engine
+app.post('/api/matching/start', (req, res) => {
+  try {
+    matchingEngine.start();
+    res.json({
+      success: true,
+      message: 'Matching engine started'
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to start matching engine',
+      message: error.message
+    });
+  }
+});
+
+app.post('/api/matching/stop', (req, res) => {
+  try {
+    matchingEngine.stop();
+    res.json({
+      success: true,
+      message: 'Matching engine stopped'
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to stop matching engine',
+      message: error.message
+    });
+  }
+});
+
 // API Routes
 app.use('/api/orders', orderRoutes);
 app.use('/api/orderbook', orderbookRoutes);
@@ -122,7 +175,10 @@ app.get('/api/test', (req, res) => {
       'GET /api/orders/:orderId - Get specific order',
       'DELETE /api/orders/:orderId - Cancel order',
       'GET /api/orderbook/:tokenPair - Get order book',
-      'GET /api/orderbook - Get trading pairs'
+      'GET /api/orderbook - Get trading pairs',
+      'GET /api/matching/stats - Get matching engine stats',
+      'POST /api/matching/start - Start matching engine',
+      'POST /api/matching/stop - Stop matching engine'
     ]
   });
 });
@@ -206,18 +262,29 @@ server.listen(PORT, () => {
 ⚡ Socket.IO: Ready for real-time connections
 
 🔗 Available API Endpoints:
-   POST   /api/orders          - Submit new order
-   GET    /api/orders          - Get orders (with filtering)
-   GET    /api/orders/:id      - Get specific order
-   DELETE /api/orders/:id      - Cancel order
-   GET    /api/orderbook/:pair - Get order book
-   GET    /api/orderbook       - Get trading pairs
+   POST   /api/orders              - Submit new order
+   GET    /api/orders              - Get orders (with filtering)
+   GET    /api/orders/:id          - Get specific order
+   DELETE /api/orders/:id          - Cancel order
+   GET    /api/orderbook/:pair     - Get order book
+   GET    /api/orderbook           - Get trading pairs
+   GET    /api/matching/stats      - Matching engine stats
+   POST   /api/matching/start      - Start matching engine
+   POST   /api/matching/stop       - Stop matching engine
   `);
+
+  // Start the matching engine automatically
+  console.log('🔄 Starting matching engine...');
+  setTimeout(() => {
+    matchingEngine.start();
+  }, 2000); // Start after 2 seconds to ensure DB is ready
+
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
+  matchingEngine.stop();
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
