@@ -241,10 +241,16 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
         owner = newOwner;
     }
 
-    // ============= CORE FUNCTIONS (TO BE IMPLEMENTED) =============
+    // ============= CORE FUNCTIONS =============
 
     /**
-     * @dev Execute a matched order pair (implementation in next commit)
+     * @dev Execute a matched order pair
+     * @param buyOrder The buy order details
+     * @param sellOrder The sell order details  
+     * @param buySignature Signature from buy order creator
+     * @param sellSignature Signature from sell order creator
+     * @param matchedAmount Amount to be traded in sell token units
+     * @return success True if execution completed successfully
      */
     function executeMatch(
         IOrder.Order memory buyOrder,
@@ -252,9 +258,74 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
         bytes memory buySignature,
         bytes memory sellSignature,
         uint256 matchedAmount
-    ) external virtual override returns (bool success) {
-        // Implementation coming in next commit
-        revert("Not implemented yet");
+    ) external override onlyRelayer whenNotPaused returns (bool success) {
+        // Generate match ID for tracking
+        bytes32 matchId = keccak256(
+            abi.encodePacked(
+                SignatureVerifier.getOrderHash(buyOrder),
+                SignatureVerifier.getOrderHash(sellOrder),
+                matchedAmount,
+                block.timestamp
+            )
+        );
+
+        // Prevent double execution
+        if (executedMatches[matchId]) {
+            revert MatchAlreadyExecuted(matchId);
+        }
+
+        // Validate both orders
+        _validateOrderForExecution(buyOrder, buySignature);
+        _validateOrderForExecution(sellOrder, sellSignature);
+
+        // Validate match compatibility
+        _validateMatchCompatibility(buyOrder, sellOrder, matchedAmount);
+
+        // Calculate amounts for token transfers
+        (uint256 sellAmount, uint256 buyAmount) = _calculateTransferAmounts(
+            buyOrder,
+            sellOrder,
+            matchedAmount
+        );
+
+        // Mark nonces as used (prevents replay attacks)
+        usedNonces[buyOrder.userAddress][buyOrder.nonce] = true;
+        usedNonces[sellOrder.userAddress][sellOrder.nonce] = true;
+
+        // Mark match as executed
+        executedMatches[matchId] = true;
+
+        // Execute atomic token swap
+        _executeTokenSwap(
+            buyOrder.userAddress,
+            sellOrder.userAddress,
+            sellOrder.sellToken,
+            buyOrder.sellToken,
+            sellAmount,
+            buyAmount,
+            matchId
+        );
+
+        // Emit nonce usage events
+        emit NonceUsed(buyOrder.userAddress, buyOrder.nonce, SignatureVerifier.getOrderHash(buyOrder));
+        emit NonceUsed(sellOrder.userAddress, sellOrder.nonce, SignatureVerifier.getOrderHash(sellOrder));
+
+        // Emit match execution event
+        emit MatchExecuted(
+            matchId,
+            SignatureVerifier.getOrderHash(buyOrder),
+            SignatureVerifier.getOrderHash(sellOrder),
+            buyOrder.userAddress,
+            sellOrder.userAddress,
+            sellOrder.sellToken,
+            buyOrder.sellToken,
+            sellAmount,
+            buyAmount,
+            matchedAmount,
+            block.timestamp
+        );
+
+        return true;
     }
 
     /**
@@ -266,5 +337,170 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
     ) external virtual override returns (bool success) {
         // Implementation coming in next commit
         revert("Not implemented yet");
+    }
+
+    // ============= INTERNAL VALIDATION FUNCTIONS =============
+
+    /**
+     * @dev Validate an order for execution
+     * @param order The order to validate
+     * @param signature The order signature
+     */
+    function _validateOrderForExecution(
+        IOrder.Order memory order,
+        bytes memory signature
+    ) internal view {
+        // Check order structure and expiry
+        (bool isValid, string memory reason) = OrderValidator.isValidOrder(order);
+        if (!isValid) {
+            revert InvalidOrder(reason);
+        }
+
+        // Verify signature
+        (bool signatureValid, address signer) = SignatureVerifier.verifyOrderSignature(order, signature);
+        if (!signatureValid) {
+            revert InvalidSignature(order.userAddress, signer);
+        }
+
+        // Check nonce hasn't been used
+        if (usedNonces[order.userAddress][order.nonce]) {
+            revert NonceAlreadyUsed(order.userAddress, order.nonce);
+        }
+
+        // Check order hasn't been cancelled
+        bytes32 orderHash = SignatureVerifier.getOrderHash(order);
+        if (cancelledOrders[orderHash]) {
+            revert OrderAlreadyCancelled(orderHash);
+        }
+    }
+
+    /**
+     * @dev Validate that two orders can be matched together
+     * @param buyOrder The buy order
+     * @param sellOrder The sell order
+     * @param matchedAmount The amount to match
+     */
+    function _validateMatchCompatibility(
+        IOrder.Order memory buyOrder,
+        IOrder.Order memory sellOrder,
+        uint256 matchedAmount
+    ) internal pure {
+        // Orders must be for the same token pair (but opposite directions)
+        if (buyOrder.sellToken != sellOrder.buyToken || buyOrder.buyToken != sellOrder.sellToken) {
+            revert InvalidOrder("Token pair mismatch");
+        }
+
+        // Users cannot trade with themselves
+        if (buyOrder.userAddress == sellOrder.userAddress) {
+            revert InvalidOrder("Cannot self-trade");
+        }
+
+        // Matched amount must be positive and not exceed order amounts
+        if (matchedAmount == 0) {
+            revert InvalidAmount(matchedAmount);
+        }
+
+        if (matchedAmount > buyOrder.sellAmount || matchedAmount > sellOrder.sellAmount) {
+            revert InvalidMatchAmount(matchedAmount, 
+                buyOrder.sellAmount < sellOrder.sellAmount ? buyOrder.sellAmount : sellOrder.sellAmount);
+        }
+
+        // Price check: ensure buyer is willing to pay seller's price
+        // buyOrder price = buyOrder.buyAmount / buyOrder.sellAmount
+        // sellOrder price = sellOrder.buyAmount / sellOrder.sellAmount
+        // Buy price must be >= sell price
+        if (buyOrder.buyAmount * sellOrder.sellAmount < sellOrder.buyAmount * buyOrder.sellAmount) {
+            revert InvalidOrder("Price mismatch - buyer price too low");
+        }
+    }
+
+    /**
+     * @dev Calculate actual transfer amounts based on matched amount
+     * @param buyOrder The buy order
+     * @param sellOrder The sell order  
+     * @param matchedAmount Amount being matched (in sell token units)
+     * @return sellAmount Amount seller sends
+     * @return buyAmount Amount buyer receives
+     */
+    function _calculateTransferAmounts(
+        IOrder.Order memory buyOrder,
+        IOrder.Order memory sellOrder,
+        uint256 matchedAmount
+    ) internal pure returns (uint256 sellAmount, uint256 buyAmount) {
+        sellAmount = matchedAmount;
+        
+        // Calculate buy amount using seller's price (maker gets price preference)
+        // buyAmount = matchedAmount * (sellOrder.buyAmount / sellOrder.sellAmount)
+        buyAmount = (matchedAmount * sellOrder.buyAmount) / sellOrder.sellAmount;
+        
+        // Ensure buyer doesn't pay more than their limit
+        uint256 buyerMaxPayment = (matchedAmount * buyOrder.buyAmount) / buyOrder.sellAmount;
+        if (buyAmount > buyerMaxPayment) {
+            buyAmount = buyerMaxPayment;
+        }
+    }
+
+    /**
+     * @dev Execute atomic token swap between two users
+     * @param buyer Address of the buyer
+     * @param seller Address of the seller
+     * @param sellToken Token being sold
+     * @param buyToken Token being bought
+     * @param sellAmount Amount being sold
+     * @param buyAmount Amount being bought
+     * @param matchId Match ID for event tracking
+     */
+    function _executeTokenSwap(
+        address buyer,
+        address seller,
+        address sellToken,
+        address buyToken,
+        uint256 sellAmount,
+        uint256 buyAmount,
+        bytes32 matchId
+    ) internal {
+        // For now, we'll implement a simple approval-based transfer system
+        // In production, this would integrate with 1inch Fusion or similar for atomic swaps
+        
+        // Transfer sell token from seller to buyer
+        _safeTransferFrom(sellToken, seller, buyer, sellAmount);
+        emit TokenTransfer(sellToken, seller, buyer, sellAmount, matchId);
+
+        // Transfer buy token from buyer to seller  
+        _safeTransferFrom(buyToken, buyer, seller, buyAmount);
+        emit TokenTransfer(buyToken, buyer, seller, buyAmount, matchId);
+
+        // Collect protocol fee if configured
+        if (protocolFeeBps > 0) {
+            uint256 protocolFee = (buyAmount * protocolFeeBps) / 10000;
+            if (protocolFee > 0) {
+                _safeTransferFrom(buyToken, buyer, feeRecipient, protocolFee);
+                emit FeesCollected(matchId, feeRecipient, buyToken, protocolFee, "protocol");
+            }
+        }
+    }
+
+    /**
+     * @dev Safe ERC20 transfer with proper error handling
+     * @param token Token contract address
+     * @param from Sender address
+     * @param to Recipient address
+     * @param amount Amount to transfer
+     */
+    function _safeTransferFrom(
+        address token,
+        address from,
+        address to,
+        uint256 amount
+    ) internal {
+        // For demo purposes, we'll use a simple call
+        // In production, use OpenZeppelin's SafeERC20 library
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSignature("transferFrom(address,address,uint256)", from, to, amount)
+        );
+        
+        if (!success || (data.length > 0 && !abi.decode(data, (bool)))) {
+            revert TokenTransferFailed(token, from, to, amount);
+        }
     }
 } 
