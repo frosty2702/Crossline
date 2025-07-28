@@ -1,124 +1,181 @@
 const mongoose = require('mongoose');
 
-const orderSchema = new mongoose.Schema({
-  // User and order identification
+const OrderSchema = new mongoose.Schema({
+  // User Information
   userAddress: {
     type: String,
     required: true,
     lowercase: true,
     index: true
   },
-  orderId: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true
-  },
   
-  // Order details
+  // Order Details
   sellToken: {
     address: { type: String, required: true, lowercase: true },
-    symbol: { type: String, required: true },
-    decimals: { type: Number, required: true }
-  },
-  buyToken: {
-    address: { type: String, required: true, lowercase: true },
-    symbol: { type: String, required: true },
+    symbol: { type: String, required: true, uppercase: true },
     decimals: { type: Number, required: true }
   },
   
-  // Amounts and pricing
+  buyToken: {
+    address: { type: String, required: true, lowercase: true },
+    symbol: { type: String, required: true, uppercase: true },
+    decimals: { type: Number, required: true }
+  },
+  
+  // Order Amounts
   sellAmount: {
-    type: String, // Using string to handle large numbers
+    type: String, // Use string to handle large numbers (wei)
     required: true
   },
+  
   buyAmount: {
     type: String, // Minimum amount to receive
     required: true
   },
+  
+  // Price (calculated: buyAmount / sellAmount)
   price: {
-    type: Number, // Price = buyAmount / sellAmount
+    type: Number,
     required: true,
     index: true
   },
   
-  // Chain information
+  // Chain Information
   sourceChain: {
     type: String,
     required: true,
-    enum: ['ethereum', 'polygon', 'arbitrum', 'localhost']
+    enum: ['ethereum', 'polygon', 'arbitrum', 'localhost'],
+    default: 'ethereum'
   },
+  
   targetChain: {
     type: String,
     required: true,
-    enum: ['ethereum', 'polygon', 'arbitrum', 'localhost']
+    enum: ['ethereum', 'polygon', 'arbitrum', 'localhost'],
+    default: 'ethereum'
   },
   
-  // Order lifecycle
+  // Order Metadata
+  orderType: {
+    type: String,
+    required: true,
+    enum: ['buy', 'sell'],
+    index: true
+  },
+  
   orderStatus: {
     type: String,
     required: true,
-    enum: ['open', 'matched', 'filled', 'cancelled', 'expired'],
+    enum: ['open', 'matched', 'partially_filled', 'filled', 'cancelled', 'expired'],
     default: 'open',
     index: true
   },
   
-  // Signature and validation
-  signature: {
-    type: String,
-    required: true
-  },
-  nonce: {
-    type: String,
-    required: true
+  // Timing
+  expiry: {
+    type: Date,
+    required: true,
+    index: true
   },
   
-  // Timestamps
   createdAt: {
     type: Date,
     default: Date.now,
     index: true
   },
-  expiresAt: {
-    type: Date,
-    required: true,
-    index: true
-  },
-  filledAt: {
-    type: Date
+  
+  // Cryptographic
+  signature: {
+    type: String,
+    required: true
   },
   
-  // Execution details
-  fillAmount: {
+  nonce: {
+    type: String,
+    required: true,
+    unique: true // Prevent replay attacks
+  },
+  
+  // Order Book
+  tokenPair: {
+    type: String,
+    required: true,
+    index: true // e.g., "WETH-USDC"
+  },
+  
+  // Execution tracking
+  filledAmount: {
     type: String,
     default: '0'
   },
-  executionTxHash: {
+  
+  remainingAmount: {
     type: String
   },
   
-  // Matching information
+  // Matching
   matchedWith: [{
-    orderId: String,
+    orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order' },
     matchedAmount: String,
     matchedAt: Date
-  }]
+  }],
+  
+  // Transaction tracking
+  executionTxHash: {
+    type: String,
+    default: null
+  },
+  
+  executedAt: {
+    type: Date,
+    default: null
+  },
+  
+  // Additional metadata
+  metadata: {
+    userAgent: String,
+    ipAddress: String,
+    version: { type: String, default: '1.0' }
+  }
 }, {
   timestamps: true
 });
 
-// Indexes for performance
-orderSchema.index({ sellToken: 1, buyToken: 1 });
-orderSchema.index({ price: 1, orderStatus: 1 });
-orderSchema.index({ expiresAt: 1 });
-orderSchema.index({ createdAt: -1 });
+// Indexes for efficient querying
+OrderSchema.index({ tokenPair: 1, orderType: 1, price: 1 });
+OrderSchema.index({ userAddress: 1, createdAt: -1 });
+OrderSchema.index({ orderStatus: 1, expiry: 1 });
+OrderSchema.index({ sourceChain: 1, targetChain: 1 });
 
-// Pre-save middleware to generate orderId
-orderSchema.pre('save', function(next) {
-  if (!this.orderId) {
-    this.orderId = `order_${this.userAddress}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+// Virtual for token pair generation
+OrderSchema.virtual('formattedTokenPair').get(function() {
+  return `${this.sellToken.symbol}-${this.buyToken.symbol}`;
+});
+
+// Pre-save middleware
+OrderSchema.pre('save', function(next) {
+  // Set token pair
+  this.tokenPair = `${this.sellToken.symbol}-${this.buyToken.symbol}`;
+  
+  // Calculate remaining amount
+  if (!this.remainingAmount) {
+    this.remainingAmount = this.sellAmount;
   }
+  
   next();
 });
 
-module.exports = mongoose.model('Order', orderSchema); 
+// Methods
+OrderSchema.methods.isExpired = function() {
+  return new Date() > this.expiry;
+};
+
+OrderSchema.methods.canBeMatched = function() {
+  return this.orderStatus === 'open' && !this.isExpired();
+};
+
+OrderSchema.methods.getOppositeOrderType = function() {
+  return this.orderType === 'buy' ? 'sell' : 'buy';
+};
+
+module.exports = mongoose.model('Order', OrderSchema); 
