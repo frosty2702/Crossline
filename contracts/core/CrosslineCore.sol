@@ -6,6 +6,7 @@ import "../interfaces/ICrosslineCore.sol";
 import "../interfaces/ICrosslineEvents.sol";
 import "../libraries/OrderValidator.sol";
 import "../libraries/SignatureVerifier.sol";
+import "./TokenHandler.sol";
 
 /**
  * @title CrosslineCore
@@ -35,6 +36,22 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
     bool public paused;
 
     /**
+     * @dev TokenHandler integration
+     */
+    TokenHandler public tokenHandler;
+
+    /**
+     * @dev Protocol fee recipient address
+     */
+    address public feeRecipient;
+
+    /**
+     * @dev Protocol fee percentage (basis points: 10000 = 100%)
+     * Default: 30 basis points = 0.3%
+     */
+    uint256 public protocolFeeBps;
+
+    /**
      * @dev Mapping to track used nonces for replay protection
      * user address => nonce => used
      */
@@ -52,17 +69,6 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
      */
     mapping(bytes32 => bool) public executedMatches;
 
-    /**
-     * @dev Protocol fee recipient address
-     */
-    address public feeRecipient;
-
-    /**
-     * @dev Protocol fee percentage (basis points: 10000 = 100%)
-     * Default: 30 basis points = 0.3%
-     */
-    uint256 public protocolFeeBps;
-
     // ============= MODIFIERS =============
 
     /**
@@ -70,7 +76,7 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
      */
     modifier onlyOwner() {
         if (msg.sender != owner) {
-            revert OnlyOwner(msg.sender);
+            revert Unauthorized("onlyOwner");
         }
         _;
     }
@@ -80,7 +86,7 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
      */
     modifier onlyRelayer() {
         if (msg.sender != relayer) {
-            revert UnauthorizedRelayer(msg.sender);
+            revert Unauthorized("onlyRelayer");
         }
         _;
     }
@@ -100,7 +106,7 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
      */
     modifier notZeroAddress(address addr) {
         if (addr == address(0)) {
-            revert ZeroAddress();
+            revert InvalidAddress(addr);
         }
         _;
     }
@@ -110,31 +116,26 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
     /**
      * @dev Initialize the CrosslineCore contract
      * @param _relayer Address of the authorized relayer (backend service)
+     * @param _tokenHandler Address of the TokenHandler contract
      * @param _feeRecipient Address to receive protocol fees
      * @param _protocolFeeBps Protocol fee in basis points (30 = 0.3%)
      */
     constructor(
         address _relayer,
+        address _tokenHandler,
         address _feeRecipient,
         uint256 _protocolFeeBps
-    ) 
-        notZeroAddress(_relayer)
-        notZeroAddress(_feeRecipient)
-    {
-        // Validate fee is reasonable (max 5% = 500 basis points)
-        if (_protocolFeeBps > 500) {
-            revert InvalidAmount(_protocolFeeBps);
-        }
-
+    ) notZeroAddress(_relayer) notZeroAddress(_tokenHandler) notZeroAddress(_feeRecipient) {
         owner = msg.sender;
         relayer = _relayer;
+        tokenHandler = TokenHandler(_tokenHandler);
         feeRecipient = _feeRecipient;
         protocolFeeBps = _protocolFeeBps;
+        
+        // Validate fee is reasonable (max 5%)
+        require(_protocolFeeBps <= 500, "Protocol fee too high");
+        
         paused = false;
-
-        // Emit initial setup events
-        emit RelayerUpdated(address(0), _relayer, msg.sender);
-        emit PauseStatusChanged(false, msg.sender, block.timestamp);
     }
 
     // ============= VIEW FUNCTIONS =============
@@ -163,7 +164,7 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
      * @param orderHash Hash of the order to check
      * @return cancelled True if order is cancelled
      */
-    function isOrderCancelled(bytes32 orderHash) external view returns (bool cancelled) {
+    function isOrderCancelled(bytes32 orderHash) external view override returns (bool cancelled) {
         return cancelledOrders[orderHash];
     }
 
@@ -173,8 +174,17 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
      * @param nonce Nonce to check
      * @return used True if nonce has been used
      */
-    function isNonceUsed(address user, uint256 nonce) external view returns (bool used) {
+    function isNonceUsed(address user, uint256 nonce) external view override returns (bool used) {
         return usedNonces[user][nonce];
+    }
+
+    /**
+     * @dev Check if a match has been executed
+     * @param matchId The match ID to check
+     * @return executed True if match has been executed
+     */
+    function isMatchExecuted(bytes32 matchId) external view returns (bool executed) {
+        return executedMatches[matchId];
     }
 
     /**
@@ -201,19 +211,20 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
      * @dev Update the authorized relayer address
      * @param newRelayer New relayer address
      */
-    function updateRelayer(address newRelayer) external onlyOwner notZeroAddress(newRelayer) {
+    function setRelayer(address _relayer) external onlyOwner notZeroAddress(_relayer) {
         address oldRelayer = relayer;
-        relayer = newRelayer;
-        emit RelayerUpdated(oldRelayer, newRelayer, msg.sender);
+        relayer = _relayer;
+        emit RelayerUpdated(oldRelayer, _relayer);
     }
 
     /**
-     * @dev Pause or unpause the contract
-     * @param _paused New pause status
+     * @dev Update the TokenHandler contract address
+     * @param newTokenHandler New TokenHandler address
      */
-    function setPaused(bool _paused) external onlyOwner {
-        paused = _paused;
-        emit PauseStatusChanged(_paused, msg.sender, block.timestamp);
+    function setTokenHandler(address _tokenHandler) external onlyOwner notZeroAddress(_tokenHandler) {
+        address oldTokenHandler = address(tokenHandler);
+        tokenHandler = TokenHandler(_tokenHandler);
+        emit TokenHandlerUpdated(oldTokenHandler, _tokenHandler);
     }
 
     /**
@@ -221,16 +232,30 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
      * @param newFeeRecipient New fee recipient address
      * @param newFeeBps New fee in basis points (max 500 = 5%)
      */
-    function updateFeeConfig(
-        address newFeeRecipient, 
-        uint256 newFeeBps
-    ) external onlyOwner notZeroAddress(newFeeRecipient) {
-        if (newFeeBps > 500) {
-            revert InvalidAmount(newFeeBps);
-        }
+    function setProtocolFee(uint256 _feeBps, address _feeRecipient) external onlyOwner notZeroAddress(_feeRecipient) {
+        require(_feeBps <= 500, "Protocol fee too high"); // Max 5%
         
-        feeRecipient = newFeeRecipient;
-        protocolFeeBps = newFeeBps;
+        uint256 oldFeeBps = protocolFeeBps;
+        address oldFeeRecipient = feeRecipient;
+        
+        protocolFeeBps = _feeBps;
+        feeRecipient = _feeRecipient;
+        
+        emit ProtocolFeeUpdated(oldFeeBps, _feeBps, oldFeeRecipient, _feeRecipient);
+    }
+
+    /**
+     * @dev Pause or unpause the contract
+     * @param _paused New pause status
+     */
+    function pause() external onlyOwner {
+        paused = true;
+        emit ContractPausedEvent(true);
+    }
+    
+    function unpause() external onlyOwner {
+        paused = false;
+        emit ContractPausedEvent(false);
     }
 
     /**
@@ -259,72 +284,59 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
         bytes memory sellSignature,
         uint256 matchedAmount
     ) external override onlyRelayer whenNotPaused returns (bool success) {
-        // Generate match ID for tracking
-        bytes32 matchId = keccak256(
-            abi.encodePacked(
-                SignatureVerifier.getOrderHash(buyOrder),
-                SignatureVerifier.getOrderHash(sellOrder),
-                matchedAmount,
-                block.timestamp
-            )
-        );
-
+        // Generate match ID
+        bytes32 matchId = keccak256(abi.encodePacked(
+            buyOrder.userAddress,
+            sellOrder.userAddress,
+            buyOrder.sellToken,
+            buyOrder.buyToken,
+            matchedAmount,
+            block.timestamp,
+            block.number
+        ));
+        
         // Prevent double execution
         if (executedMatches[matchId]) {
             revert MatchAlreadyExecuted(matchId);
         }
-
-        // Validate both orders
+        
+        // Validate orders for execution
         _validateOrderForExecution(buyOrder, buySignature);
         _validateOrderForExecution(sellOrder, sellSignature);
-
+        
         // Validate match compatibility
         _validateMatchCompatibility(buyOrder, sellOrder, matchedAmount);
-
-        // Calculate amounts for token transfers
-        (uint256 sellAmount, uint256 buyAmount) = _calculateTransferAmounts(
-            buyOrder,
-            sellOrder,
-            matchedAmount
-        );
-
-        // Mark nonces as used (prevents replay attacks)
+        
+        // Mark nonces as used
         usedNonces[buyOrder.userAddress][buyOrder.nonce] = true;
         usedNonces[sellOrder.userAddress][sellOrder.nonce] = true;
-
+        
         // Mark match as executed
         executedMatches[matchId] = true;
-
-        // Execute atomic token swap
-        _executeTokenSwap(
-            buyOrder.userAddress,
-            sellOrder.userAddress,
-            sellOrder.sellToken,
-            buyOrder.sellToken,
-            sellAmount,
-            buyAmount,
-            matchId
-        );
-
-        // Emit nonce usage events
-        emit NonceUsed(buyOrder.userAddress, buyOrder.nonce, SignatureVerifier.getOrderHash(buyOrder));
-        emit NonceUsed(sellOrder.userAddress, sellOrder.nonce, SignatureVerifier.getOrderHash(sellOrder));
-
-        // Emit match execution event
+        
+        // Execute token swap with TokenHandler
+        _executeTokenSwapWithFees(buyOrder, sellOrder, matchedAmount, matchId);
+        
+        // Emit events
+        emit NonceUsed(buyOrder.userAddress, buyOrder.nonce, buyOrder.getOrderHash());
+        emit NonceUsed(sellOrder.userAddress, sellOrder.nonce, sellOrder.getOrderHash());
+        
+        bytes32 buyOrderHash = buyOrder.getOrderHash();
+        bytes32 sellOrderHash = sellOrder.getOrderHash();
+        
         emit MatchExecuted(
             matchId,
-            SignatureVerifier.getOrderHash(buyOrder),
-            SignatureVerifier.getOrderHash(sellOrder),
+            buyOrderHash,
+            sellOrderHash,
             buyOrder.userAddress,
             sellOrder.userAddress,
             sellOrder.sellToken,
             buyOrder.sellToken,
-            sellAmount,
-            buyAmount,
             matchedAmount,
+            _calculateCorrespondingAmount(buyOrder, matchedAmount),
             block.timestamp
         );
-
+        
         return true;
     }
 
@@ -339,157 +351,115 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
         bytes memory signature
     ) external override whenNotPaused returns (bool success) {
         // Verify cancellation signature
-        bool isValidSignature = SignatureVerifier.verifyCancellationSignature(
-            orderHash,
-            msg.sender,
+        address signer = SignatureVerifier.recoverSigner(
+            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", orderHash)),
             signature
         );
         
-        if (!isValidSignature) {
-            revert InvalidSignature(msg.sender, address(0));
-        }
-
-        // Check order hasn't already been cancelled
+        // Check if already cancelled
         if (cancelledOrders[orderHash]) {
-            revert OrderAlreadyCancelled(orderHash);
+            revert OrderCancelled(orderHash);
         }
-
-        // Mark order as cancelled
+        
+        // Mark as cancelled
         cancelledOrders[orderHash] = true;
-
-        // Emit cancellation event
-        emit OrderCancelled(orderHash, msg.sender, block.timestamp);
-
+        
+        emit OrderCancelled(orderHash, signer, block.timestamp);
         return true;
     }
 
-    // ============= ENHANCED NONCE MANAGEMENT =============
-
     /**
-     * @dev Cancel multiple orders in a single transaction (gas efficient)
+     * @dev Cancel multiple orders in a single transaction
      * @param orderHashes Array of order hashes to cancel
-     * @param signatures Array of corresponding signatures
-     * @return success True if all cancellations completed
+     * @param signatures Array of cancellation signatures
+     * @return success True if all cancellations succeeded
      */
     function batchCancelOrders(
         bytes32[] calldata orderHashes,
         bytes[] calldata signatures
     ) external whenNotPaused returns (bool success) {
-        if (orderHashes.length != signatures.length) {
-            revert InvalidAmount(orderHashes.length);
-        }
-
-        if (orderHashes.length == 0) {
-            revert InvalidAmount(0);
-        }
-
+        require(orderHashes.length == signatures.length, "Array length mismatch");
+        
         for (uint256 i = 0; i < orderHashes.length; i++) {
-            // Verify cancellation signature for each order
-            bool isValidSignature = SignatureVerifier.verifyCancellationSignature(
-                orderHashes[i],
-                msg.sender,
-                signatures[i]
-            );
-            
-            if (!isValidSignature) {
-                revert InvalidSignature(msg.sender, address(0));
+            if (!cancelledOrders[orderHashes[i]]) {
+                // Verify signature
+                address signer = SignatureVerifier.recoverSigner(
+                    keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", orderHashes[i])),
+                    signatures[i]
+                );
+                
+                // Mark as cancelled
+                cancelledOrders[orderHashes[i]] = true;
+                emit OrderCancelled(orderHashes[i], signer, block.timestamp);
             }
-
-            // Skip if already cancelled (don't revert, just continue)
-            if (cancelledOrders[orderHashes[i]]) {
-                continue;
-            }
-
-            // Mark order as cancelled
-            cancelledOrders[orderHashes[i]] = true;
-
-            // Emit cancellation event
-            emit OrderCancelled(orderHashes[i], msg.sender, block.timestamp);
         }
-
+        
         return true;
     }
 
     /**
-     * @dev Invalidate a range of nonces (prevents future use)
-     * Useful for emergency situations or when user wants to cancel many orders
-     * @param startNonce Starting nonce to invalidate (inclusive)
-     * @param endNonce Ending nonce to invalidate (inclusive)
+     * @dev Invalidate a range of nonces for a user
+     * @param startNonce Starting nonce (inclusive)
+     * @param endNonce Ending nonce (inclusive)
      */
-    function invalidateNonceRange(
-        uint256 startNonce,
-        uint256 endNonce
-    ) external whenNotPaused {
-        if (startNonce > endNonce) {
-            revert InvalidNonce(msg.sender, startNonce);
-        }
-
-        // Reasonable limit to prevent gas limit issues
-        if (endNonce - startNonce > 1000) {
-            revert InvalidAmount(endNonce - startNonce);
-        }
-
+    function invalidateNonceRange(uint256 startNonce, uint256 endNonce) external whenNotPaused {
+        require(endNonce >= startNonce, "Invalid nonce range");
+        require(endNonce - startNonce <= 1000, "Range too large"); // Prevent gas issues
+        
         for (uint256 nonce = startNonce; nonce <= endNonce; nonce++) {
             if (!usedNonces[msg.sender][nonce]) {
                 usedNonces[msg.sender][nonce] = true;
-                emit NonceUsed(msg.sender, nonce, bytes32(0)); // Empty order hash for manual invalidation
+                emit NonceUsed(msg.sender, nonce, bytes32(0));
             }
         }
     }
 
+    // ============= BATCH QUERY FUNCTIONS =============
+
     /**
-     * @dev Get the status of multiple nonces at once (gas efficient for frontend)
-     * @param user User address to check
+     * @dev Check status of multiple nonces for a user
+     * @param user User address
      * @param nonces Array of nonces to check
      * @return used Array of boolean values indicating if each nonce is used
      */
-    function getNonceStatuses(
-        address user,
-        uint256[] calldata nonces
-    ) external view returns (bool[] memory used) {
+    function getNonceStatuses(address user, uint256[] calldata nonces) 
+        external view returns (bool[] memory used) {
         used = new bool[](nonces.length);
-        
         for (uint256 i = 0; i < nonces.length; i++) {
             used[i] = usedNonces[user][nonces[i]];
         }
     }
 
     /**
-     * @dev Check if multiple orders are cancelled (batch query for frontend)
+     * @dev Check cancellation status of multiple orders
      * @param orderHashes Array of order hashes to check
-     * @return cancelled Array of boolean values indicating cancellation status
+     * @return cancelled Array of boolean values indicating if each order is cancelled
      */
-    function getOrderCancellationStatuses(
-        bytes32[] calldata orderHashes
-    ) external view returns (bool[] memory cancelled) {
+    function getOrderCancellationStatuses(bytes32[] calldata orderHashes) 
+        external view returns (bool[] memory cancelled) {
         cancelled = new bool[](orderHashes.length);
-        
         for (uint256 i = 0; i < orderHashes.length; i++) {
             cancelled[i] = cancelledOrders[orderHashes[i]];
         }
     }
 
     /**
-     * @dev Validate multiple orders at once (useful for frontend validation)
+     * @dev Batch validate multiple orders
      * @param orders Array of orders to validate
-     * @return results Array of validation results (true = valid, false = invalid)
-     * @return reasons Array of error messages for invalid orders
+     * @return results Array of validation results
+     * @return reasons Array of failure reasons (empty string if valid)
      */
-    function batchValidateOrders(
-        IOrder.Order[] calldata orders
-    ) external view returns (bool[] memory results, string[] memory reasons) {
+    function batchValidateOrders(IOrder.Order[] calldata orders) 
+        external view returns (bool[] memory results, string[] memory reasons) {
         results = new bool[](orders.length);
         reasons = new string[](orders.length);
         
         for (uint256 i = 0; i < orders.length; i++) {
-            (bool isValid, string memory reason) = OrderValidator.isValidOrder(orders[i]);
-            results[i] = isValid;
-            reasons[i] = reason;
+            (results[i], reasons[i]) = orders[i].isValidOrder();
             
-            // Additional checks for cancellation and nonce usage
-            if (isValid) {
-                bytes32 orderHash = SignatureVerifier.getOrderHash(orders[i]);
-                
+            // Additional checks if basic validation passes
+            if (results[i]) {
+                bytes32 orderHash = orders[i].getOrderHash();
                 if (cancelledOrders[orderHash]) {
                     results[i] = false;
                     reasons[i] = "Order cancelled";
@@ -504,200 +474,167 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
     // ============= EMERGENCY FUNCTIONS =============
 
     /**
-     * @dev Emergency function to mark specific match as executed (admin only)
-     * Used for recovery in case of failed execution but successful token transfer
-     * @param matchId The match ID to mark as executed
+     * @dev Emergency function to mark a match as executed (admin only)
+     * @param matchId Match ID to mark as executed
      */
     function emergencyMarkMatchExecuted(bytes32 matchId) external onlyOwner {
         executedMatches[matchId] = true;
-        
-        // Emit a special event for tracking
-        emit MatchExecuted(
-            matchId,
-            bytes32(0), // Empty order hashes for emergency marking
-            bytes32(0),
-            address(0),
-            address(0),
-            address(0),
-            address(0),
-            0,
-            0,
-            0,
-            block.timestamp
-        );
+        emit MatchExecuted(matchId, bytes32(0), bytes32(0), address(0), address(0), address(0), address(0), 0, 0, block.timestamp);
     }
 
     /**
-     * @dev Emergency function to unmark executed match (admin only)
-     * Used for recovery in exceptional circumstances
-     * @param matchId The match ID to unmark
+     * @dev Emergency function to unmark a match as executed (admin only)
+     * @param matchId Match ID to unmark
      */
     function emergencyUnmarkMatchExecuted(bytes32 matchId) external onlyOwner {
         executedMatches[matchId] = false;
     }
 
-    // ============= INTERNAL VALIDATION FUNCTIONS =============
-
+    // ============= INTERNAL FUNCTIONS =============
+    
     /**
-     * @dev Validate an order for execution
-     * @param order The order to validate
-     * @param signature The order signature
+     * @dev Execute token swap using TokenHandler with fee collection
+     */
+    function _executeTokenSwapWithFees(
+        IOrder.Order memory buyOrder,
+        IOrder.Order memory sellOrder,
+        uint256 matchedAmount,
+        bytes32 matchId
+    ) internal {
+        // Calculate corresponding amount for buy order
+        uint256 buyAmount = _calculateCorrespondingAmount(buyOrder, matchedAmount);
+        
+        // Prepare transfer arrays for batch execution
+        address[] memory tokens = new address[](2);
+        address[] memory froms = new address[](2);
+        address[] memory tos = new address[](2);
+        uint256[] memory amounts = new uint256[](2);
+        
+        // Transfer 1: Sell order token (from seller to buyer)
+        tokens[0] = sellOrder.sellToken;
+        froms[0] = sellOrder.userAddress;
+        tos[0] = buyOrder.userAddress;
+        amounts[0] = matchedAmount;
+        
+        // Transfer 2: Buy order token (from buyer to seller)  
+        tokens[1] = buyOrder.sellToken;
+        froms[1] = buyOrder.userAddress;
+        tos[1] = sellOrder.userAddress;
+        amounts[1] = buyAmount;
+        
+        // Execute transfers with fees if protocol fee > 0
+        if (protocolFeeBps > 0) {
+            // Execute individual transfers with fees
+            tokenHandler.safeTransferWithFees(
+                tokens[0], froms[0], tos[0], amounts[0],
+                feeRecipient, protocolFeeBps, matchId
+            );
+            
+            tokenHandler.safeTransferWithFees(
+                tokens[1], froms[1], tos[1], amounts[1],
+                feeRecipient, protocolFeeBps, matchId
+            );
+        } else {
+            // Execute batch transfer without fees
+            tokenHandler.batchSafeTransfer(tokens, froms, tos, amounts, matchId);
+        }
+    }
+    
+    /**
+     * @dev Calculate corresponding amount based on price ratio
+     */
+    function _calculateCorrespondingAmount(
+        IOrder.Order memory order,
+        uint256 baseAmount
+    ) internal pure returns (uint256 correspondingAmount) {
+        // Price ratio: buyAmount / sellAmount
+        // For a given sellAmount, buyAmount = (sellAmount * order.buyAmount) / order.sellAmount
+        correspondingAmount = (baseAmount * order.buyAmount) / order.sellAmount;
+    }
+    
+    /**
+     * @dev Validate order for execution
      */
     function _validateOrderForExecution(
         IOrder.Order memory order,
         bytes memory signature
     ) internal view {
-        // Check order structure and expiry
-        (bool isValid, string memory reason) = OrderValidator.isValidOrder(order);
+        // Validate order structure and expiry
+        (bool isValid, string memory reason) = order.isValidOrder();
         if (!isValid) {
             revert InvalidOrder(reason);
         }
-
-        // Verify signature
-        (bool signatureValid, address signer) = SignatureVerifier.verifyOrderSignature(order, signature);
-        if (!signatureValid) {
-            revert InvalidSignature(order.userAddress, signer);
+        
+        // Check if order is cancelled
+        bytes32 orderHash = order.getOrderHash();
+        if (cancelledOrders[orderHash]) {
+            revert OrderCancelled(orderHash);
         }
-
-        // Check nonce hasn't been used
+        
+        // Check if nonce is already used
         if (usedNonces[order.userAddress][order.nonce]) {
             revert NonceAlreadyUsed(order.userAddress, order.nonce);
         }
-
-        // Check order hasn't been cancelled
-        bytes32 orderHash = SignatureVerifier.getOrderHash(order);
-        if (cancelledOrders[orderHash]) {
-            revert OrderAlreadyCancelled(orderHash);
+        
+        // Verify signature
+        (bool validSig, address signer) = order.verifyOrderSignature(signature);
+        if (!validSig || signer != order.userAddress) {
+            revert InvalidSignature(order.userAddress, signer);
+        }
+        
+        // Validate token support and balances through TokenHandler
+        (bool validTransfer, string memory transferReason) = tokenHandler.validateTransfer(
+            order.sellToken,
+            order.userAddress,
+            address(this), // Temporary validation target
+            order.sellAmount,
+            address(this)
+        );
+        if (!validTransfer) {
+            revert InsufficientBalance(order.userAddress, order.sellToken, order.sellAmount);
         }
     }
-
+    
     /**
-     * @dev Validate that two orders can be matched together
-     * @param buyOrder The buy order
-     * @param sellOrder The sell order
-     * @param matchedAmount The amount to match
+     * @dev Validate that two orders can be matched
      */
     function _validateMatchCompatibility(
         IOrder.Order memory buyOrder,
         IOrder.Order memory sellOrder,
         uint256 matchedAmount
     ) internal pure {
-        // Orders must be for the same token pair (but opposite directions)
-        if (buyOrder.sellToken != sellOrder.buyToken || buyOrder.buyToken != sellOrder.sellToken) {
-            revert InvalidOrder("Token pair mismatch");
+        // Check token compatibility (buyOrder.buyToken == sellOrder.sellToken)
+        if (buyOrder.buyToken != sellOrder.sellToken) {
+            revert OrderMismatch("Token mismatch");
         }
-
-        // Users cannot trade with themselves
-        if (buyOrder.userAddress == sellOrder.userAddress) {
-            revert InvalidOrder("Cannot self-trade");
-        }
-
-        // Matched amount must be positive and not exceed order amounts
-        if (matchedAmount == 0) {
-            revert InvalidAmount(matchedAmount);
-        }
-
-        if (matchedAmount > buyOrder.sellAmount || matchedAmount > sellOrder.sellAmount) {
-            revert InvalidMatchAmount(matchedAmount, 
-                buyOrder.sellAmount < sellOrder.sellAmount ? buyOrder.sellAmount : sellOrder.sellAmount);
-        }
-
-        // Price check: ensure buyer is willing to pay seller's price
-        // buyOrder price = buyOrder.buyAmount / buyOrder.sellAmount
-        // sellOrder price = sellOrder.buyAmount / sellOrder.sellAmount
-        // Buy price must be >= sell price
-        if (buyOrder.buyAmount * sellOrder.sellAmount < sellOrder.buyAmount * buyOrder.sellAmount) {
-            revert InvalidOrder("Price mismatch - buyer price too low");
-        }
-    }
-
-    /**
-     * @dev Calculate actual transfer amounts based on matched amount
-     * @param buyOrder The buy order
-     * @param sellOrder The sell order  
-     * @param matchedAmount Amount being matched (in sell token units)
-     * @return sellAmount Amount seller sends
-     * @return buyAmount Amount buyer receives
-     */
-    function _calculateTransferAmounts(
-        IOrder.Order memory buyOrder,
-        IOrder.Order memory sellOrder,
-        uint256 matchedAmount
-    ) internal pure returns (uint256 sellAmount, uint256 buyAmount) {
-        sellAmount = matchedAmount;
         
-        // Calculate buy amount using seller's price (maker gets price preference)
-        // buyAmount = matchedAmount * (sellOrder.buyAmount / sellOrder.sellAmount)
-        buyAmount = (matchedAmount * sellOrder.buyAmount) / sellOrder.sellAmount;
-        
-        // Ensure buyer doesn't pay more than their limit
-        uint256 buyerMaxPayment = (matchedAmount * buyOrder.buyAmount) / buyOrder.sellAmount;
-        if (buyAmount > buyerMaxPayment) {
-            buyAmount = buyerMaxPayment;
+        // Check that sellOrder.buyToken == buyOrder.sellToken  
+        if (sellOrder.buyToken != buyOrder.sellToken) {
+            revert OrderMismatch("Counter-token mismatch");
         }
-    }
-
-    /**
-     * @dev Execute atomic token swap between two users
-     * @param buyer Address of the buyer
-     * @param seller Address of the seller
-     * @param sellToken Token being sold
-     * @param buyToken Token being bought
-     * @param sellAmount Amount being sold
-     * @param buyAmount Amount being bought
-     * @param matchId Match ID for event tracking
-     */
-    function _executeTokenSwap(
-        address buyer,
-        address seller,
-        address sellToken,
-        address buyToken,
-        uint256 sellAmount,
-        uint256 buyAmount,
-        bytes32 matchId
-    ) internal {
-        // For now, we'll implement a simple approval-based transfer system
-        // In production, this would integrate with 1inch Fusion or similar for atomic swaps
         
-        // Transfer sell token from seller to buyer
-        _safeTransferFrom(sellToken, seller, buyer, sellAmount);
-        emit TokenTransfer(sellToken, seller, buyer, sellAmount, matchId);
-
-        // Transfer buy token from buyer to seller  
-        _safeTransferFrom(buyToken, buyer, seller, buyAmount);
-        emit TokenTransfer(buyToken, buyer, seller, buyAmount, matchId);
-
-        // Collect protocol fee if configured
-        if (protocolFeeBps > 0) {
-            uint256 protocolFee = (buyAmount * protocolFeeBps) / 10000;
-            if (protocolFee > 0) {
-                _safeTransferFrom(buyToken, buyer, feeRecipient, protocolFee);
-                emit FeesCollected(matchId, feeRecipient, buyToken, protocolFee, "protocol");
-            }
+        // Check chain compatibility
+        if (buyOrder.sourceChain != sellOrder.targetChain || 
+            buyOrder.targetChain != sellOrder.sourceChain) {
+            revert CrossChainMismatch(buyOrder.sourceChain, sellOrder.targetChain);
         }
-    }
-
-    /**
-     * @dev Safe ERC20 transfer with proper error handling
-     * @param token Token contract address
-     * @param from Sender address
-     * @param to Recipient address
-     * @param amount Amount to transfer
-     */
-    function _safeTransferFrom(
-        address token,
-        address from,
-        address to,
-        uint256 amount
-    ) internal {
-        // For demo purposes, we'll use a simple call
-        // In production, use OpenZeppelin's SafeERC20 library
-        (bool success, bytes memory data) = token.call(
-            abi.encodeWithSignature("transferFrom(address,address,uint256)", from, to, amount)
-        );
         
-        if (!success || (data.length > 0 && !abi.decode(data, (bool)))) {
-            revert TokenTransferFailed(token, from, to, amount);
+        // Validate matched amount doesn't exceed order limits
+        if (matchedAmount > sellOrder.sellAmount) {
+            revert InvalidAmount("Matched amount exceeds sell order");
+        }
+        
+        uint256 requiredBuyAmount = _calculateCorrespondingAmount(buyOrder, matchedAmount);
+        if (requiredBuyAmount > buyOrder.sellAmount) {
+            revert InvalidAmount("Required buy amount exceeds buy order");
+        }
+        
+        // Validate price compatibility (buy price >= sell price)
+        uint256 buyPrice = (buyOrder.buyAmount * 1e18) / buyOrder.sellAmount;
+        uint256 sellPrice = (sellOrder.buyAmount * 1e18) / sellOrder.sellAmount;
+        
+        if (buyPrice < sellPrice) {
+            revert PriceMismatch(buyPrice, sellPrice);
         }
     }
 } 

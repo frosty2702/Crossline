@@ -100,21 +100,10 @@ interface ICrosslineEvents {
      * @dev Emitted when relayer address is updated
      * Administrative event for access control
      */
-    event RelayerUpdated(
-        address indexed oldRelayer,
-        address indexed newRelayer,
-        address indexed updatedBy
-    );
-
-    /**
-     * @dev Emitted when contract is paused/unpaused
-     * Emergency control event
-     */
-    event PauseStatusChanged(
-        bool indexed isPaused,
-        address indexed triggeredBy,
-        uint256 timestamp
-    );
+    event RelayerUpdated(address indexed oldRelayer, address indexed newRelayer);
+    event TokenHandlerUpdated(address indexed oldHandler, address indexed newHandler);
+    event ProtocolFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps, address indexed oldRecipient, address indexed newRecipient);
+    event ContractPausedEvent(bool paused);
 
     // ============= CUSTOM ERRORS =============
 
