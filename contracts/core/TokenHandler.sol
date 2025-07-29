@@ -364,4 +364,274 @@ contract TokenHandler is ICrosslineEvents {
             minBalances[i] = minimumBalances[tokens[i]];
         }
     }
+
+    // ============= SAFE TRANSFER FUNCTIONS =============
+
+    /**
+     * @dev Execute a safe token transfer with comprehensive validation
+     * @param token Token address (use NATIVE_TOKEN for ETH)
+     * @param from Sender address
+     * @param to Recipient address
+     * @param amount Transfer amount
+     * @param matchId Optional match ID for event tracking
+     * @return success True if transfer completed successfully
+     */
+    function safeTransfer(
+        address token,
+        address from,
+        address to,
+        uint256 amount,
+        bytes32 matchId
+    ) external onlySupportedToken(token) returns (bool success) {
+        // Pre-transfer validation
+        (bool isValid, string memory reason) = this.validateTransfer(token, from, to, amount, msg.sender);
+        if (!isValid) {
+            revert TokenTransferFailed(token, from, to, amount);
+        }
+
+        // Execute the transfer
+        success = _executeTransfer(token, from, to, amount);
+        
+        if (!success) {
+            revert TokenTransferFailed(token, from, to, amount);
+        }
+
+        // Emit transfer event
+        emit TokenTransfer(token, from, to, amount, matchId);
+    }
+
+    /**
+     * @dev Execute multiple transfers atomically (all succeed or all fail)
+     * @param tokens Array of token addresses
+     * @param froms Array of sender addresses
+     * @param tos Array of recipient addresses
+     * @param amounts Array of transfer amounts
+     * @param matchId Match ID for event tracking
+     * @return success True if all transfers completed successfully
+     */
+    function batchSafeTransfer(
+        address[] calldata tokens,
+        address[] calldata froms,
+        address[] calldata tos,
+        uint256[] calldata amounts,
+        bytes32 matchId
+    ) external returns (bool success) {
+        // Validate array lengths
+        require(
+            tokens.length == froms.length &&
+            froms.length == tos.length &&
+            tos.length == amounts.length,
+            "Array length mismatch"
+        );
+
+        // Pre-validate all transfers first
+        for (uint256 i = 0; i < tokens.length; i++) {
+            (bool isValid, string memory reason) = this.validateTransfer(
+                tokens[i], 
+                froms[i], 
+                tos[i], 
+                amounts[i], 
+                msg.sender
+            );
+            if (!isValid) {
+                revert TokenTransferFailed(tokens[i], froms[i], tos[i], amounts[i]);
+            }
+        }
+
+        // Execute all transfers
+        for (uint256 i = 0; i < tokens.length; i++) {
+            bool transferSuccess = _executeTransfer(tokens[i], froms[i], tos[i], amounts[i]);
+            if (!transferSuccess) {
+                revert TokenTransferFailed(tokens[i], froms[i], tos[i], amounts[i]);
+            }
+
+            // Emit transfer event for each
+            emit TokenTransfer(tokens[i], froms[i], tos[i], amounts[i], matchId);
+        }
+
+        return true;
+    }
+
+    /**
+     * @dev Transfer tokens from one address to another with fee collection
+     * @param token Token address
+     * @param from Sender address
+     * @param to Recipient address
+     * @param amount Transfer amount (gross amount)
+     * @param feeRecipient Address to receive fee
+     * @param feeBps Fee in basis points (10000 = 100%)
+     * @param matchId Match ID for event tracking
+     * @return netAmount Amount received by recipient (after fees)
+     */
+    function safeTransferWithFees(
+        address token,
+        address from,
+        address to,
+        uint256 amount,
+        address feeRecipient,
+        uint256 feeBps,
+        bytes32 matchId
+    ) external onlySupportedToken(token) returns (uint256 netAmount) {
+        // Validate fee parameters
+        require(feeBps <= 10000, "Fee too high"); // Max 100%
+        require(feeRecipient != address(0), "Invalid fee recipient");
+
+        // Calculate fee and net amount
+        uint256 feeAmount = (amount * feeBps) / 10000;
+        netAmount = amount - feeAmount;
+
+        // Pre-validate main transfer
+        (bool isValid, string memory reason) = this.validateTransfer(token, from, to, netAmount, msg.sender);
+        if (!isValid) {
+            revert TokenTransferFailed(token, from, to, netAmount);
+        }
+
+        // Execute main transfer
+        bool success = _executeTransfer(token, from, to, netAmount);
+        if (!success) {
+            revert TokenTransferFailed(token, from, to, netAmount);
+        }
+
+        // Execute fee transfer if fee > 0
+        if (feeAmount > 0) {
+            bool feeSuccess = _executeTransfer(token, from, feeRecipient, feeAmount);
+            if (!feeSuccess) {
+                revert TokenTransferFailed(token, from, feeRecipient, feeAmount);
+            }
+
+            // Emit fee collection event
+            emit FeesCollected(matchId, feeRecipient, token, feeAmount, "protocol");
+        }
+
+        // Emit main transfer event
+        emit TokenTransfer(token, from, to, netAmount, matchId);
+    }
+
+    // ============= INTERNAL TRANSFER EXECUTION =============
+
+    /**
+     * @dev Internal function to execute token transfer
+     * @param token Token address
+     * @param from Sender address
+     * @param to Recipient address
+     * @param amount Transfer amount
+     * @return success True if transfer succeeded
+     */
+    function _executeTransfer(
+        address token,
+        address from,
+        address to,
+        uint256 amount
+    ) internal returns (bool success) {
+        if (token == NATIVE_TOKEN) {
+            return _executeETHTransfer(from, to, amount);
+        } else {
+            return _executeERC20Transfer(token, from, to, amount);
+        }
+    }
+
+    /**
+     * @dev Execute ETH transfer
+     * @param from Sender address (must be msg.sender for ETH)
+     * @param to Recipient address
+     * @param amount Transfer amount
+     * @return success True if transfer succeeded
+     */
+    function _executeETHTransfer(
+        address from,
+        address to,
+        uint256 amount
+    ) internal returns (bool success) {
+        // For ETH transfers, the sender must be the msg.sender
+        require(from == msg.sender, "ETH transfer: sender must be msg.sender");
+        require(msg.value >= amount, "ETH transfer: insufficient value sent");
+
+        // Transfer ETH to recipient
+        (success, ) = payable(to).call{value: amount}("");
+        
+        // Return excess ETH to sender if any
+        if (msg.value > amount) {
+            (bool refundSuccess, ) = payable(from).call{value: msg.value - amount}("");
+            require(refundSuccess, "ETH refund failed");
+        }
+    }
+
+    /**
+     * @dev Execute ERC20 token transfer
+     * @param token Token contract address
+     * @param from Sender address
+     * @param to Recipient address
+     * @param amount Transfer amount
+     * @return success True if transfer succeeded
+     */
+    function _executeERC20Transfer(
+        address token,
+        address from,
+        address to,
+        uint256 amount
+    ) internal returns (bool success) {
+        // Use transferFrom for ERC20 tokens
+        (bool callSuccess, bytes memory data) = token.call(
+            abi.encodeWithSignature("transferFrom(address,address,uint256)", from, to, amount)
+        );
+
+        // Check if call succeeded and returned true (or no return value)
+        success = callSuccess && (data.length == 0 || abi.decode(data, (bool)));
+    }
+
+    // ============= RECOVERY FUNCTIONS =============
+
+    /**
+     * @dev Emergency function to recover stuck tokens (admin only)
+     * @param token Token address (use NATIVE_TOKEN for ETH)
+     * @param to Recipient address
+     * @param amount Amount to recover
+     */
+    function emergencyRecover(
+        address token,
+        address to,
+        uint256 amount
+    ) external onlyOwner notZeroAddress(to) {
+        require(amount > 0, "Amount must be positive");
+
+        if (token == NATIVE_TOKEN) {
+            // Recover ETH
+            require(address(this).balance >= amount, "Insufficient ETH balance");
+            (bool success, ) = payable(to).call{value: amount}("");
+            require(success, "ETH recovery failed");
+        } else {
+            // Recover ERC20 tokens
+            (bool success, bytes memory data) = token.call(
+                abi.encodeWithSignature("transfer(address,uint256)", to, amount)
+            );
+            require(success && (data.length == 0 || abi.decode(data, (bool))), "Token recovery failed");
+        }
+    }
+
+    /**
+     * @dev Check if contract has sufficient balance for recovery
+     * @param token Token address
+     * @return balance Contract's balance of the token
+     */
+    function getContractBalance(address token) external view returns (uint256 balance) {
+        return _getBalance(token, address(this));
+    }
+
+    // ============= RECEIVE FUNCTION =============
+
+    /**
+     * @dev Receive function to accept ETH transfers
+     */
+    receive() external payable {
+        // Allow contract to receive ETH for native token handling
+    }
+
+    // ============= FALLBACK FUNCTION =============
+
+    /**
+     * @dev Fallback function (should not be used in normal operations)
+     */
+    fallback() external payable {
+        revert("Function not found");
+    }
 } 
