@@ -329,14 +329,211 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
     }
 
     /**
-     * @dev Cancel an order onchain (implementation in next commit)
+     * @dev Cancel an order onchain
+     * @param orderHash Hash of the order to cancel
+     * @param signature Signature proving ownership
+     * @return success True if cancellation completed
      */
     function cancelOrder(
         bytes32 orderHash,
         bytes memory signature
-    ) external virtual override returns (bool success) {
-        // Implementation coming in next commit
-        revert("Not implemented yet");
+    ) external override whenNotPaused returns (bool success) {
+        // Verify cancellation signature
+        bool isValidSignature = SignatureVerifier.verifyCancellationSignature(
+            orderHash,
+            msg.sender,
+            signature
+        );
+        
+        if (!isValidSignature) {
+            revert InvalidSignature(msg.sender, address(0));
+        }
+
+        // Check order hasn't already been cancelled
+        if (cancelledOrders[orderHash]) {
+            revert OrderAlreadyCancelled(orderHash);
+        }
+
+        // Mark order as cancelled
+        cancelledOrders[orderHash] = true;
+
+        // Emit cancellation event
+        emit OrderCancelled(orderHash, msg.sender, block.timestamp);
+
+        return true;
+    }
+
+    // ============= ENHANCED NONCE MANAGEMENT =============
+
+    /**
+     * @dev Cancel multiple orders in a single transaction (gas efficient)
+     * @param orderHashes Array of order hashes to cancel
+     * @param signatures Array of corresponding signatures
+     * @return success True if all cancellations completed
+     */
+    function batchCancelOrders(
+        bytes32[] calldata orderHashes,
+        bytes[] calldata signatures
+    ) external whenNotPaused returns (bool success) {
+        if (orderHashes.length != signatures.length) {
+            revert InvalidAmount(orderHashes.length);
+        }
+
+        if (orderHashes.length == 0) {
+            revert InvalidAmount(0);
+        }
+
+        for (uint256 i = 0; i < orderHashes.length; i++) {
+            // Verify cancellation signature for each order
+            bool isValidSignature = SignatureVerifier.verifyCancellationSignature(
+                orderHashes[i],
+                msg.sender,
+                signatures[i]
+            );
+            
+            if (!isValidSignature) {
+                revert InvalidSignature(msg.sender, address(0));
+            }
+
+            // Skip if already cancelled (don't revert, just continue)
+            if (cancelledOrders[orderHashes[i]]) {
+                continue;
+            }
+
+            // Mark order as cancelled
+            cancelledOrders[orderHashes[i]] = true;
+
+            // Emit cancellation event
+            emit OrderCancelled(orderHashes[i], msg.sender, block.timestamp);
+        }
+
+        return true;
+    }
+
+    /**
+     * @dev Invalidate a range of nonces (prevents future use)
+     * Useful for emergency situations or when user wants to cancel many orders
+     * @param startNonce Starting nonce to invalidate (inclusive)
+     * @param endNonce Ending nonce to invalidate (inclusive)
+     */
+    function invalidateNonceRange(
+        uint256 startNonce,
+        uint256 endNonce
+    ) external whenNotPaused {
+        if (startNonce > endNonce) {
+            revert InvalidNonce(msg.sender, startNonce);
+        }
+
+        // Reasonable limit to prevent gas limit issues
+        if (endNonce - startNonce > 1000) {
+            revert InvalidAmount(endNonce - startNonce);
+        }
+
+        for (uint256 nonce = startNonce; nonce <= endNonce; nonce++) {
+            if (!usedNonces[msg.sender][nonce]) {
+                usedNonces[msg.sender][nonce] = true;
+                emit NonceUsed(msg.sender, nonce, bytes32(0)); // Empty order hash for manual invalidation
+            }
+        }
+    }
+
+    /**
+     * @dev Get the status of multiple nonces at once (gas efficient for frontend)
+     * @param user User address to check
+     * @param nonces Array of nonces to check
+     * @return used Array of boolean values indicating if each nonce is used
+     */
+    function getNonceStatuses(
+        address user,
+        uint256[] calldata nonces
+    ) external view returns (bool[] memory used) {
+        used = new bool[](nonces.length);
+        
+        for (uint256 i = 0; i < nonces.length; i++) {
+            used[i] = usedNonces[user][nonces[i]];
+        }
+    }
+
+    /**
+     * @dev Check if multiple orders are cancelled (batch query for frontend)
+     * @param orderHashes Array of order hashes to check
+     * @return cancelled Array of boolean values indicating cancellation status
+     */
+    function getOrderCancellationStatuses(
+        bytes32[] calldata orderHashes
+    ) external view returns (bool[] memory cancelled) {
+        cancelled = new bool[](orderHashes.length);
+        
+        for (uint256 i = 0; i < orderHashes.length; i++) {
+            cancelled[i] = cancelledOrders[orderHashes[i]];
+        }
+    }
+
+    /**
+     * @dev Validate multiple orders at once (useful for frontend validation)
+     * @param orders Array of orders to validate
+     * @return results Array of validation results (true = valid, false = invalid)
+     * @return reasons Array of error messages for invalid orders
+     */
+    function batchValidateOrders(
+        IOrder.Order[] calldata orders
+    ) external view returns (bool[] memory results, string[] memory reasons) {
+        results = new bool[](orders.length);
+        reasons = new string[](orders.length);
+        
+        for (uint256 i = 0; i < orders.length; i++) {
+            (bool isValid, string memory reason) = OrderValidator.isValidOrder(orders[i]);
+            results[i] = isValid;
+            reasons[i] = reason;
+            
+            // Additional checks for cancellation and nonce usage
+            if (isValid) {
+                bytes32 orderHash = SignatureVerifier.getOrderHash(orders[i]);
+                
+                if (cancelledOrders[orderHash]) {
+                    results[i] = false;
+                    reasons[i] = "Order cancelled";
+                } else if (usedNonces[orders[i].userAddress][orders[i].nonce]) {
+                    results[i] = false;
+                    reasons[i] = "Nonce already used";
+                }
+            }
+        }
+    }
+
+    // ============= EMERGENCY FUNCTIONS =============
+
+    /**
+     * @dev Emergency function to mark specific match as executed (admin only)
+     * Used for recovery in case of failed execution but successful token transfer
+     * @param matchId The match ID to mark as executed
+     */
+    function emergencyMarkMatchExecuted(bytes32 matchId) external onlyOwner {
+        executedMatches[matchId] = true;
+        
+        // Emit a special event for tracking
+        emit MatchExecuted(
+            matchId,
+            bytes32(0), // Empty order hashes for emergency marking
+            bytes32(0),
+            address(0),
+            address(0),
+            address(0),
+            address(0),
+            0,
+            0,
+            0,
+            block.timestamp
+        );
+    }
+
+    /**
+     * @dev Emergency function to unmark executed match (admin only)
+     * Used for recovery in exceptional circumstances
+     * @param matchId The match ID to unmark
+     */
+    function emergencyUnmarkMatchExecuted(bytes32 matchId) external onlyOwner {
+        executedMatches[matchId] = false;
     }
 
     // ============= INTERNAL VALIDATION FUNCTIONS =============
