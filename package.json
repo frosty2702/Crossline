@@ -6,21 +6,55 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
+    "test:coverage": "hardhat coverage",
     "deploy:local": "hardhat run scripts/deploy.js --network localhost",
     "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "deploy:polygon": "hardhat run scripts/deploy.js --network polygon",
+    "deploy:arbitrum": "hardhat run scripts/deploy.js --network arbitrum",
+    "deploy:crosschain:local": "hardhat run scripts/deploy-crosschain.js --network localhost",
+    "deploy:crosschain:sepolia": "hardhat run scripts/deploy-crosschain.js --network sepolia",
     "demo": "hardhat run scripts/demo.js --network localhost",
+    "verify:sepolia": "hardhat run scripts/verify.js --network sepolia",
+    "verify:polygon": "hardhat run scripts/verify.js --network polygon",
+    "verify:arbitrum": "hardhat run scripts/verify.js --network arbitrum",
     "node": "hardhat node",
-    "clean": "hardhat clean"
+    "clean": "hardhat clean",
+    "setup": "./setup.sh",
+    "setup:demo": "./setup.sh --demo",
+    "start": "./start.sh",
+    "stop": "./stop.sh",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run node\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm start",
+    "build": "npm run compile && cd frontend && npm run build",
+    "lint": "npm run lint:contracts && npm run lint:backend && npm run lint:frontend",
+    "lint:contracts": "npx solhint 'contracts/**/*.sol'",
+    "lint:backend": "cd backend && npm run lint",
+    "lint:frontend": "cd frontend && npm run lint",
+    "postinstall": "cd backend && npm install && cd ../frontend && npm install"
   },
-  "keywords": ["defi", "cross-chain", "limit-orders", "mev-protection", "gasless"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/crossline.git"
+  },
+  "keywords": [
+    "defi",
+    "cross-chain",
+    "limit-orders",
+    "gasless",
+    "mev-protection",
+    "blockchain",
+    "hackathon"
+  ],
   "author": "Crossline Team",
   "license": "MIT",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@openzeppelin/hardhat-upgrades": "^3.0.0",
     "hardhat": "^2.19.0",
-    "dotenv": "^16.3.0"
+    "dotenv": "^16.3.0",
+    "concurrently": "^8.2.0",
+    "solhint": "^4.0.0"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.0",
@@ -29,5 +63,9 @@
     "@axelar-network/axelar-gmp-sdk-solidity": "^5.6.0",
     "@1inch/limit-order-protocol": "^4.0.0",
     "ethers": "^6.8.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
   }
 } 
