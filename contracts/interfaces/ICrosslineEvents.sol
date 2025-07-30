@@ -11,8 +11,8 @@ interface ICrosslineEvents {
     // ============= EVENTS =============
 
     /**
-     * @dev Emitted when an order match is executed successfully
-     * Backend listens to this event to update match status
+     * @dev Emitted when a limit order match is executed onchain
+     * Contains all information needed for backend processing
      */
     event MatchExecuted(
         bytes32 indexed matchId,
@@ -24,6 +24,7 @@ interface ICrosslineEvents {
         address buyToken,
         uint256 executedAmount,
         uint256 correspondingAmount,
+        uint256 fees,
         uint256 timestamp
     );
 
@@ -53,9 +54,10 @@ interface ICrosslineEvents {
      */
     event CrossChainMatchRequested(
         bytes32 indexed matchId,
-        uint256 indexed sourceChain,
         uint256 indexed targetChain,
-        bytes32 orderHash
+        bytes32 buyOrderHash,
+        bytes32 sellOrderHash,
+        uint256 amount
     );
 
     /**
@@ -79,7 +81,7 @@ interface ICrosslineEvents {
         address indexed from,
         address indexed to,
         uint256 amount,
-        bytes32 indexed matchId
+        bytes32 matchId
     );
 
     /**
@@ -88,8 +90,8 @@ interface ICrosslineEvents {
      */
     event FeesCollected(
         bytes32 indexed matchId,
-        address indexed recipient,
-        address indexed token,
+        address indexed feeRecipient,
+        address token,
         uint256 amount,
         string feeType // "relayer", "protocol", "gas"
     );
@@ -103,7 +105,7 @@ interface ICrosslineEvents {
     event ProtocolFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps, address indexed oldRecipient, address indexed newRecipient);
     event ContractPausedEvent(bool paused);
 
-    // TokenHandler events
+    // Token management events
     event TokenAdded(address indexed token);
     event TokenRemoved(address indexed token);
     event MinimumBalanceUpdated(address indexed token, uint256 minBalance);
@@ -118,18 +120,25 @@ interface ICrosslineEvents {
     error OrderNotFound(bytes32 orderHash);
     error OrderAlreadyCancelled(bytes32 orderHash);
     error OrderAlreadyExecuted(bytes32 orderHash);
+
+    /**
+     * @dev Signature-related errors
+     */
     error InvalidSignature(address expectedSigner, address recoveredSigner);
     error SignatureTooShort(uint256 actualLength);
     error SignatureTooLong(uint256 actualLength);
     error InvalidRecoveryId(uint8 recoveryId);
+
+    /**
+     * @dev Nonce-related errors (replay protection)
+     */
     error NonceAlreadyUsed(address user, uint256 nonce);
     error InvalidNonce(address user, uint256 nonce);
-    error OrderMismatch(string reason);
 
     /**
      * @dev Token-related errors
      */
-    error InsufficientBalance(address token, address user, uint256 required, uint256 available);
+    error InsufficientBalance(address user, address token, uint256 required);
     error InsufficientAllowance(address token, address user, uint256 required, uint256 allowed);
     error TokenTransferFailed(address token, address from, address to, uint256 amount);
     error InvalidToken(address token);
@@ -138,11 +147,10 @@ interface ICrosslineEvents {
     /**
      * @dev Access control errors
      */
+    error Unauthorized(string role);
     error UnauthorizedRelayer(address caller);
     error UnauthorizedUser(address caller);
     error OnlyOwner(address caller);
-    error Unauthorized(string role);
-    error InvalidAddress(address addr);
 
     /**
      * @dev Match execution errors
@@ -151,16 +159,18 @@ interface ICrosslineEvents {
     error MatchExpired(bytes32 matchId, uint256 expiry);
     error MatchNotFound(bytes32 matchId);
     error InvalidMatchAmount(uint256 requested, uint256 available);
-    error PriceMismatch(uint256 buyPrice, uint256 sellPrice);
 
     /**
      * @dev Cross-chain errors
      */
     error UnsupportedChain(uint256 chainId);
+    error CrossChainNotSupported(uint256 chainId);
     error CrossChainMessageFailed(uint256 targetChain, bytes data);
     error InvalidCrossChainMessage(uint256 sourceChain, bytes data);
+    error InvalidMessage(string reason);
+    error OrderMismatch(string reason);
     error CrossChainMismatch(uint256 sourceChain, uint256 targetChain);
-    error CrossChainNotSupported(uint256 chainId);
+    error PriceMismatch(uint256 buyPrice, uint256 sellPrice);
 
     /**
      * @dev Contract state errors
@@ -168,8 +178,8 @@ interface ICrosslineEvents {
     error ContractPaused();
     error ContractNotPaused();
     error ZeroAddress();
+    error InvalidAddress(address addr);
     error InvalidAmount(uint256 amount);
-    error InvalidAmount(string reason);
 
     /**
      * @dev Price and calculation errors
@@ -178,9 +188,4 @@ interface ICrosslineEvents {
     error InvalidPriceRange(uint256 price, uint256 minPrice, uint256 maxPrice);
     error ArithmeticOverflow(uint256 a, uint256 b);
     error ArithmeticUnderflow(uint256 a, uint256 b);
-
-    /**
-     * @dev Message related errors
-     */
-    error InvalidMessage(string reason);
 } 

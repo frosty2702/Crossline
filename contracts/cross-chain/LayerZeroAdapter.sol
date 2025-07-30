@@ -3,8 +3,18 @@ pragma solidity ^0.8.20;
 
 import "../interfaces/ICrossChainAdapter.sol";
 import "../interfaces/ICrosslineEvents.sol";
-import "@layerzerolabs/contracts/interfaces/ILayerZeroEndpoint.sol";
-import "@layerzerolabs/contracts/interfaces/ILayerZeroReceiver.sol";
+// import "@layerzerolabs/contracts/interfaces/ILayerZeroEndpoint.sol";
+// import "@layerzerolabs/contracts/interfaces/ILayerZeroReceiver.sol";
+
+// Mock interfaces for demo (replace with real imports when LayerZero is installed)
+interface ILayerZeroEndpoint {
+    function send(uint16 _dstChainId, bytes memory _destination, bytes memory _payload, address payable _refundAddress, address _zroPaymentAddress, bytes memory _adapterParams) external payable;
+    function estimateFees(uint16 _dstChainId, address _userApplication, bytes memory _payload, bool _payInZRO, bytes memory _adapterParam) external view returns (uint256 nativeFee, uint256 zroFee);
+}
+
+interface ILayerZeroReceiver {
+    function lzReceive(uint16 _srcChainId, bytes memory _srcAddress, uint64 _nonce, bytes memory _payload) external;
+}
 
 /**
  * @title LayerZeroAdapter

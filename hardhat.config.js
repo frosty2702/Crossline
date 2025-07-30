@@ -9,9 +9,10 @@ module.exports = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 200,
+        runs: 200
       },
-    },
+      viaIR: true
+    }
   },
   networks: {
     hardhat: {

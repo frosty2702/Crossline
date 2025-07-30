@@ -3,31 +3,8 @@ pragma solidity ^0.8.20;
 
 import "../interfaces/ICrossChainAdapter.sol";
 import "../interfaces/ICrosslineEvents.sol";
-// import "@axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
-// import "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
-
-// Mock interfaces for demo (replace with real imports when Axelar is installed)
-interface IAxelarGateway {
-    function callContract(string memory destinationChain, string memory destinationAddress, bytes memory payload) external;
-}
-
-interface IAxelarGasService {
-    function payNativeGasForContractCall(address sender, string memory destinationChain, string memory destinationAddress, bytes memory payload, address refundAddress) external payable;
-}
-
-abstract contract AxelarExecutable {
-    IAxelarGateway public gateway;
-    
-    constructor(address _gateway) {
-        gateway = IAxelarGateway(_gateway);
-    }
-    
-    function _execute(string calldata sourceChain, string calldata sourceAddress, bytes calldata payload) internal virtual;
-    
-    function execute(bytes32 /* commandId */, string calldata sourceChain, string calldata sourceAddress, bytes calldata payload) external {
-        _execute(sourceChain, sourceAddress, payload);
-    }
-}
+import "@axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
+import "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
 
 /**
  * @title AxelarAdapter

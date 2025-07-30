@@ -111,7 +111,7 @@ async function main() {
     console.log("\n🔓 Step 3: Setting up token approvals...");
     
     if (weth && usdc) {
-      // Alice approves WETH spending
+      // Alice approves WETH spending to CrosslineCore
       const wethApprovalTx = await weth.connect(user1).approve(
         deployment.contracts.CrosslineCore, 
         ethers.parseEther("100")
@@ -119,7 +119,7 @@ async function main() {
       await wethApprovalTx.wait();
       console.log("✅ Alice approved WETH spending");
 
-      // Bob approves USDC spending
+      // Bob approves USDC spending to CrosslineCore
       const usdcApprovalTx = await usdc.connect(user2).approve(
         deployment.contracts.CrosslineCore, 
         ethers.parseUnits("100000", 6)
@@ -174,26 +174,80 @@ async function main() {
     console.log("📋 Order 1 (Alice):", DEMO_CONFIG.orders.sellETHForUSDC.description);
     console.log("📋 Order 2 (Bob):", DEMO_CONFIG.orders.buyETHWithUSDC.description);
 
+    console.log("🔍 Order Details:");
+    console.log("Order 1 (Alice - Sell):");
+    console.log(`  - sellToken: ${order1.sellToken}`);
+    console.log(`  - buyToken: ${order1.buyToken}`)
+    console.log(`  - sellAmount: ${ethers.formatEther(order1.sellAmount)} ETH`);
+    console.log(`  - buyAmount: ${ethers.formatUnits(order1.buyAmount, 6)} USDC`);
+    
+    console.log("Order 2 (Bob - Buy):");
+    console.log(`  - sellToken: ${order2.sellToken}`);
+    console.log(`  - buyToken: ${order2.buyToken}`);
+    console.log(`  - sellAmount: ${ethers.formatUnits(order2.sellAmount, 6)} USDC`);
+    console.log(`  - buyAmount: ${ethers.formatEther(order2.buyAmount)} ETH`);
+
+    // Generate proper EIP-712 signatures
+    console.log("🔐 Generating EIP-712 signatures...");
+    
+    // EIP-712 domain
+    const domain = {
+      name: "Crossline",
+      version: "1",
+      chainId: chainId,
+      verifyingContract: deployment.contracts.CrosslineCore
+    };
+    
+    // EIP-712 types
+    const types = {
+      Order: [
+        { name: "userAddress", type: "address" },
+        { name: "sellToken", type: "address" },
+        { name: "buyToken", type: "address" },
+        { name: "sellAmount", type: "uint256" },
+        { name: "buyAmount", type: "uint256" },
+        { name: "sourceChain", type: "uint256" },
+        { name: "targetChain", type: "uint256" },
+        { name: "expiry", type: "uint256" },
+        { name: "nonce", type: "uint256" }
+      ]
+    };
+    
+    // Sign orders
+    const order1Signature = await user1.signTypedData(domain, types, order1);
+    const order2Signature = await user2.signTypedData(domain, types, order2);
+    
+    console.log("✅ Generated signatures for both orders");
+
     // Demo Step 5: Simulate order matching and execution
     console.log("\n⚡ Step 5: Executing Match (Simulating Backend Relayer)...");
     
     if (weth && usdc) {
+      // Check balances before execution
+      const aliceWETHBalance = await weth.balanceOf(await user1.getAddress());
+      const bobUSDCBalance = await usdc.balanceOf(await user2.getAddress());
+      const aliceWETHAllowance = await weth.allowance(await user1.getAddress(), deployment.contracts.CrosslineCore);
+      const bobUSDCAllowance = await usdc.allowance(await user2.getAddress(), deployment.contracts.CrosslineCore);
+      
+      console.log("💰 Pre-execution checks:");
+      console.log(`├── Alice WETH balance: ${ethers.formatEther(aliceWETHBalance)} ETH`);
+      console.log(`├── Alice WETH allowance: ${ethers.formatEther(aliceWETHAllowance)} ETH`);
+      console.log(`├── Bob USDC balance: ${ethers.formatUnits(bobUSDCBalance, 6)} USDC`);
+      console.log(`└── Bob USDC allowance: ${ethers.formatUnits(bobUSDCAllowance, 6)} USDC`);
+      
       // Calculate matched amount (minimum of both orders)
       const matchedAmount = ethers.parseEther("1"); // 1 ETH worth
 
       console.log("🎯 Matched Amount:", ethers.formatEther(matchedAmount), "ETH");
       console.log("💱 Trade Rate: 1 ETH = 1800 USDC (Bob's better price)");
 
-      // Mock signatures (in real implementation, these would be proper EIP-712 signatures)
-      const mockSignature = "0x" + "00".repeat(65);
-
       // Execute the match
       console.log("⏳ Executing trade...");
       const executeTx = await crosslineCore.connect(deployer).executeMatch(
         order2, // buy order
         order1, // sell order  
-        mockSignature, // buy signature
-        mockSignature, // sell signature
+        order2Signature, // buy signature
+        order1Signature, // sell signature
         matchedAmount
       );
       

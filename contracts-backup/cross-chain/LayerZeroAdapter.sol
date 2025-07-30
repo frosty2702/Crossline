@@ -3,57 +3,35 @@ pragma solidity ^0.8.20;
 
 import "../interfaces/ICrossChainAdapter.sol";
 import "../interfaces/ICrosslineEvents.sol";
-// import "@axelar-network/axelar-gmp-sdk-solidity/contracts/executable/AxelarExecutable.sol";
-// import "@axelar-network/axelar-gmp-sdk-solidity/contracts/interfaces/IAxelarGasService.sol";
-
-// Mock interfaces for demo (replace with real imports when Axelar is installed)
-interface IAxelarGateway {
-    function callContract(string memory destinationChain, string memory destinationAddress, bytes memory payload) external;
-}
-
-interface IAxelarGasService {
-    function payNativeGasForContractCall(address sender, string memory destinationChain, string memory destinationAddress, bytes memory payload, address refundAddress) external payable;
-}
-
-abstract contract AxelarExecutable {
-    IAxelarGateway public gateway;
-    
-    constructor(address _gateway) {
-        gateway = IAxelarGateway(_gateway);
-    }
-    
-    function _execute(string calldata sourceChain, string calldata sourceAddress, bytes calldata payload) internal virtual;
-    
-    function execute(bytes32 /* commandId */, string calldata sourceChain, string calldata sourceAddress, bytes calldata payload) external {
-        _execute(sourceChain, sourceAddress, payload);
-    }
-}
+import "@layerzerolabs/contracts/interfaces/ILayerZeroEndpoint.sol";
+import "@layerzerolabs/contracts/interfaces/ILayerZeroReceiver.sol";
 
 /**
- * @title AxelarAdapter
- * @dev Axelar implementation for cross-chain messaging
+ * @title LayerZeroAdapter
+ * @dev LayerZero implementation for cross-chain messaging
  */
-contract AxelarAdapter is ICrossChainAdapter, AxelarExecutable, ICrosslineEvents {
+contract LayerZeroAdapter is ICrossChainAdapter, ILayerZeroReceiver, ICrosslineEvents {
     
     // ============= STATE VARIABLES =============
     
-    IAxelarGasService public immutable gasService;
+    ILayerZeroEndpoint public immutable layerZeroEndpoint;
     address public crosslineCore;
     address public owner;
     
-    // Chain name mappings (Ethereum chain ID -> Axelar chain name)
-    mapping(uint256 => string) public chainIdToAxelarChain;
-    mapping(string => uint256) public axelarChainToChainId;
+    // Chain ID mappings (Ethereum chain ID -> LayerZero chain ID)
+    mapping(uint256 => uint16) public chainIdToLzChainId;
+    mapping(uint16 => uint256) public lzChainIdToChainId;
     
-    // Trusted contract addresses for each chain
-    mapping(string => string) public trustedContracts;
+    // Trusted remote addresses for each chain
+    mapping(uint16 => bytes) public trustedRemotes;
     
     // Message types
     uint8 private constant MSG_TYPE_MATCH = 0;
     uint8 private constant MSG_TYPE_SETTLEMENT = 1;
     
-    // Gas multiplier for cross-chain calls (to account for execution costs)
-    uint256 public gasMultiplier = 3; // 3x the estimated gas
+    // Gas limits for different message types
+    uint256 public matchExecutionGasLimit = 500000;
+    uint256 public settlementGasLimit = 200000;
 
     // ============= MODIFIERS =============
     
@@ -70,15 +48,14 @@ contract AxelarAdapter is ICrossChainAdapter, AxelarExecutable, ICrosslineEvents
     // ============= CONSTRUCTOR =============
     
     constructor(
-        address _gateway,
-        address _gasService,
+        address _layerZeroEndpoint,
         address _crosslineCore
-    ) AxelarExecutable(_gateway) {
-        if (_gasService == address(0) || _crosslineCore == address(0)) {
+    ) {
+        if (_layerZeroEndpoint == address(0) || _crosslineCore == address(0)) {
             revert InvalidAddress(address(0));
         }
         
-        gasService = IAxelarGasService(_gasService);
+        layerZeroEndpoint = ILayerZeroEndpoint(_layerZeroEndpoint);
         crosslineCore = _crosslineCore;
         owner = msg.sender;
         
@@ -88,18 +65,18 @@ contract AxelarAdapter is ICrossChainAdapter, AxelarExecutable, ICrosslineEvents
 
     // ============= ADMIN FUNCTIONS =============
     
-    function setTrustedContract(string calldata _axelarChain, string calldata _contractAddress) external onlyOwner {
-        trustedContracts[_axelarChain] = _contractAddress;
+    function setTrustedRemote(uint16 _lzChainId, bytes calldata _trustedRemote) external onlyOwner {
+        trustedRemotes[_lzChainId] = _trustedRemote;
     }
     
-    function addChainMapping(uint256 _chainId, string calldata _axelarChain) external onlyOwner {
-        chainIdToAxelarChain[_chainId] = _axelarChain;
-        axelarChainToChainId[_axelarChain] = _chainId;
+    function addChainMapping(uint256 _chainId, uint16 _lzChainId) external onlyOwner {
+        chainIdToLzChainId[_chainId] = _lzChainId;
+        lzChainIdToChainId[_lzChainId] = _chainId;
     }
     
-    function setGasMultiplier(uint256 _multiplier) external onlyOwner {
-        require(_multiplier > 0 && _multiplier <= 10, "Invalid multiplier");
-        gasMultiplier = _multiplier;
+    function setGasLimits(uint256 _matchGas, uint256 _settlementGas) external onlyOwner {
+        matchExecutionGasLimit = _matchGas;
+        settlementGasLimit = _settlementGas;
     }
     
     function setCrosslineCore(address _crosslineCore) external onlyOwner {
@@ -113,28 +90,26 @@ contract AxelarAdapter is ICrossChainAdapter, AxelarExecutable, ICrosslineEvents
         uint256 targetChain,
         CrossChainMatch calldata matchData
     ) external payable override onlyCrosslineCore returns (bytes32 messageId) {
-        string memory axelarTargetChain = chainIdToAxelarChain[targetChain];
-        if (bytes(axelarTargetChain).length == 0) revert CrossChainNotSupported(targetChain);
+        uint16 lzTargetChain = chainIdToLzChainId[targetChain];
+        if (lzTargetChain == 0) revert CrossChainNotSupported(targetChain);
         
-        string memory trustedContract = trustedContracts[axelarTargetChain];
-        if (bytes(trustedContract).length == 0) revert CrossChainNotSupported(targetChain);
+        bytes memory trustedRemote = trustedRemotes[lzTargetChain];
+        if (trustedRemote.length == 0) revert CrossChainNotSupported(targetChain);
         
         // Encode message
         bytes memory payload = abi.encode(MSG_TYPE_MATCH, matchData);
         
-        // Pay for gas
-        gasService.payNativeGasForContractCall{value: msg.value}(
-            address(this),
-            axelarTargetChain,
-            trustedContract,
+        // Send via LayerZero
+        layerZeroEndpoint.send{value: msg.value}(
+            lzTargetChain,
+            trustedRemote,
             payload,
-            msg.sender
+            payable(msg.sender), // refund address
+            address(0), // zro payment address
+            abi.encodePacked(uint16(1), matchExecutionGasLimit) // adapter params
         );
         
-        // Send via Axelar
-        gateway.callContract(axelarTargetChain, trustedContract, payload);
-        
-        // Generate message ID
+        // Generate message ID (LayerZero doesn't return one directly)
         messageId = keccak256(abi.encodePacked(
             block.chainid,
             targetChain,
@@ -149,26 +124,24 @@ contract AxelarAdapter is ICrossChainAdapter, AxelarExecutable, ICrosslineEvents
         uint256 targetChain,
         CrossChainSettlement calldata settlement
     ) external payable override onlyCrosslineCore returns (bytes32 messageId) {
-        string memory axelarTargetChain = chainIdToAxelarChain[targetChain];
-        if (bytes(axelarTargetChain).length == 0) revert CrossChainNotSupported(targetChain);
+        uint16 lzTargetChain = chainIdToLzChainId[targetChain];
+        if (lzTargetChain == 0) revert CrossChainNotSupported(targetChain);
         
-        string memory trustedContract = trustedContracts[axelarTargetChain];
-        if (bytes(trustedContract).length == 0) revert CrossChainNotSupported(targetChain);
+        bytes memory trustedRemote = trustedRemotes[lzTargetChain];
+        if (trustedRemote.length == 0) revert CrossChainNotSupported(targetChain);
         
         // Encode message
         bytes memory payload = abi.encode(MSG_TYPE_SETTLEMENT, settlement);
         
-        // Pay for gas
-        gasService.payNativeGasForContractCall{value: msg.value}(
-            address(this),
-            axelarTargetChain,
-            trustedContract,
+        // Send via LayerZero
+        layerZeroEndpoint.send{value: msg.value}(
+            lzTargetChain,
+            trustedRemote,
             payload,
-            msg.sender
+            payable(msg.sender), // refund address
+            address(0), // zro payment address
+            abi.encodePacked(uint16(1), settlementGasLimit) // adapter params
         );
-        
-        // Send via Axelar
-        gateway.callContract(axelarTargetChain, trustedContract, payload);
         
         // Generate message ID
         messageId = keccak256(abi.encodePacked(
@@ -181,28 +154,30 @@ contract AxelarAdapter is ICrossChainAdapter, AxelarExecutable, ICrosslineEvents
         emit CrossChainSettlementSent(settlement.matchId, targetChain, settlement.success);
     }
 
-    // ============= AXELAR EXECUTABLE =============
+    // ============= LAYERZERO RECEIVER =============
     
-    function _execute(
-        string calldata sourceChain,
-        string calldata sourceAddress,
-        bytes calldata payload
-    ) internal override {
-        // Verify trusted source
-        if (keccak256(bytes(sourceAddress)) != keccak256(bytes(trustedContracts[sourceChain]))) {
-            revert Unauthorized("untrustedSource");
+    function lzReceive(
+        uint16 _srcChainId,
+        bytes memory _srcAddress,
+        uint64 /*_nonce*/,
+        bytes memory _payload
+    ) external override {
+        if (msg.sender != address(layerZeroEndpoint)) revert Unauthorized("onlyEndpoint");
+        
+        // Verify trusted remote
+        if (keccak256(_srcAddress) != keccak256(trustedRemotes[_srcChainId])) {
+            revert Unauthorized("untrustedRemote");
         }
         
         // Decode message
-        (uint8 messageType, bytes memory data) = abi.decode(payload, (uint8, bytes));
+        (uint8 messageType, bytes memory data) = abi.decode(_payload, (uint8, bytes));
         
-        uint256 sourceChainId = axelarChainToChainId[sourceChain];
-        if (sourceChainId == 0) revert CrossChainNotSupported(0);
+        uint256 sourceChain = lzChainIdToChainId[_srcChainId];
         
         if (messageType == MSG_TYPE_MATCH) {
-            _handleCrossChainMatch(sourceChainId, data);
+            _handleCrossChainMatch(sourceChain, data);
         } else if (messageType == MSG_TYPE_SETTLEMENT) {
-            _handleCrossChainSettlement(sourceChainId, data);
+            _handleCrossChainSettlement(sourceChain, data);
         } else {
             revert InvalidMessage("unknownMessageType");
         }
@@ -214,24 +189,38 @@ contract AxelarAdapter is ICrossChainAdapter, AxelarExecutable, ICrosslineEvents
         uint256 targetChain,
         uint8 messageType
     ) external view override returns (uint256 cost) {
-        string memory axelarTargetChain = chainIdToAxelarChain[targetChain];
-        if (bytes(axelarTargetChain).length == 0) return 0;
+        uint16 lzTargetChain = chainIdToLzChainId[targetChain];
+        if (lzTargetChain == 0) return 0;
         
-        // Base gas estimate (simplified - in production would use Axelar's estimation)
-        uint256 baseGas = messageType == MSG_TYPE_MATCH ? 500000 : 200000;
+        uint256 gasLimit = messageType == MSG_TYPE_MATCH ? matchExecutionGasLimit : settlementGasLimit;
+        bytes memory adapterParams = abi.encodePacked(uint16(1), gasLimit);
         
-        // Get current gas price and estimate cost
-        // This is a simplified estimation - in production you'd use Axelar's gas estimation
-        cost = tx.gasprice * baseGas * gasMultiplier;
+        // Create dummy payload for estimation
+        bytes memory payload;
+        if (messageType == MSG_TYPE_MATCH) {
+            CrossChainMatch memory dummyMatch;
+            payload = abi.encode(MSG_TYPE_MATCH, dummyMatch);
+        } else {
+            CrossChainSettlement memory dummySettlement;
+            payload = abi.encode(MSG_TYPE_SETTLEMENT, dummySettlement);
+        }
+        
+        (cost, ) = layerZeroEndpoint.estimateFees(
+            lzTargetChain,
+            address(this),
+            payload,
+            false, // useZro
+            adapterParams
+        );
     }
     
     function isChainSupported(uint256 chainId) external view override returns (bool supported) {
-        string memory axelarChain = chainIdToAxelarChain[chainId];
-        return bytes(axelarChain).length > 0 && bytes(trustedContracts[axelarChain]).length > 0;
+        uint16 lzChainId = chainIdToLzChainId[chainId];
+        return lzChainId != 0 && trustedRemotes[lzChainId].length > 0;
     }
     
     function getAdapterType() external pure override returns (string memory adapterType) {
-        return "Axelar";
+        return "LayerZero";
     }
 
     // ============= INTERNAL FUNCTIONS =============
@@ -286,24 +275,20 @@ contract AxelarAdapter is ICrossChainAdapter, AxelarExecutable, ICrosslineEvents
     
     function _initializeChainMappings() internal {
         // Ethereum Mainnet
-        chainIdToAxelarChain[1] = "ethereum";
-        axelarChainToChainId["ethereum"] = 1;
+        chainIdToLzChainId[1] = 101;
+        lzChainIdToChainId[101] = 1;
         
         // Polygon
-        chainIdToAxelarChain[137] = "polygon";
-        axelarChainToChainId["polygon"] = 137;
+        chainIdToLzChainId[137] = 109;
+        lzChainIdToChainId[109] = 137;
         
         // Arbitrum One
-        chainIdToAxelarChain[42161] = "arbitrum";
-        axelarChainToChainId["arbitrum"] = 42161;
+        chainIdToLzChainId[42161] = 110;
+        lzChainIdToChainId[110] = 42161;
         
-        // Avalanche
-        chainIdToAxelarChain[43114] = "avalanche";
-        axelarChainToChainId["avalanche"] = 43114;
-        
-        // Binance Smart Chain
-        chainIdToAxelarChain[56] = "binance";
-        axelarChainToChainId["binance"] = 56;
+        // Sepolia Testnet
+        chainIdToLzChainId[11155111] = 10161;
+        lzChainIdToChainId[10161] = 11155111;
     }
 
     // ============= EMERGENCY FUNCTIONS =============

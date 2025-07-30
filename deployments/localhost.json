@@ -1,0 +1,29 @@
+{
+  "network": {
+    "name": "localhost",
+    "chainId": 31337,
+    "deployedAt": "2025-07-30T14:15:04.493Z"
+  },
+  "contracts": {
+    "TokenHandler": "0x40918Ba7f132E0aCba2CE4de4c4baF9BD2D7D849",
+    "CrosslineCore": "0xF32D39ff9f6Aa7a7A64d7a4F00a54826Ef791a55",
+    "MockWETH": "0xd6e1afe5cA8D00A2EFC01B89997abE2De47fdfAf",
+    "MockUSDC": "0x99dBE4AEa58E518C50a1c04aE9b48C9F6354612f",
+    "MockWBTC": "0x6F6f570F45833E249e27022648a26F4076F48f78"
+  },
+  "tokens": {
+    "WETH": "0xd6e1afe5cA8D00A2EFC01B89997abE2De47fdfAf",
+    "USDC": "0x99dBE4AEa58E518C50a1c04aE9b48C9F6354612f",
+    "WBTC": "0x6F6f570F45833E249e27022648a26F4076F48f78",
+    "ETH": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+  },
+  "configuration": {
+    "protocolFeeBps": 30,
+    "feeRecipient": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "relayer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  },
+  "deployer": {
+    "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "balance": "9999.994028677701009202"
+  }
+}
