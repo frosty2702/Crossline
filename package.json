@@ -9,17 +9,9 @@
     "deploy:local": "hardhat run scripts/deploy.js --network localhost",
     "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
     "deploy:polygon": "hardhat run scripts/deploy.js --network polygon",
-    "deploy:arbitrum": "hardhat run scripts/deploy.js --network arbitrum",
-    "deploy:crosschain:local": "hardhat run scripts/deploy-crosschain.js --network localhost",
-    "deploy:crosschain:sepolia": "hardhat run scripts/deploy-crosschain.js --network sepolia",
-    "deploy:crosschain:polygon": "hardhat run scripts/deploy-crosschain.js --network polygon",
-    "deploy:crosschain:arbitrum": "hardhat run scripts/deploy-crosschain.js --network arbitrum",
     "demo": "hardhat run scripts/demo.js --network localhost",
     "node": "hardhat node",
-    "clean": "hardhat clean",
-    "verify:sepolia": "hardhat run scripts/verify.js --network sepolia",
-    "verify:polygon": "hardhat run scripts/verify.js --network polygon",
-    "verify:arbitrum": "hardhat run scripts/verify.js --network arbitrum"
+    "clean": "hardhat clean"
   },
   "keywords": ["defi", "cross-chain", "limit-orders", "mev-protection", "gasless"],
   "author": "Crossline Team",
@@ -33,9 +25,7 @@
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.0",
     "@openzeppelin/contracts-upgradeable": "^5.0.0",
-    "@layerzerolabs/contracts": "^2.0.0",
-    "@axelar-network/axelar-gmp-sdk-solidity": "^5.6.0",
-    "@1inch/limit-order-protocol": "^4.0.0",
+
     "ethers": "^6.8.0"
   }
 } 
