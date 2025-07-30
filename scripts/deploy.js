@@ -53,7 +53,6 @@ const NETWORK_CONFIG = {
 async function main() {
   console.log("\n🚀 Starting Crossline Deployment...\n");
 
-  // Get network configuration
   const networkName = network.name;
   const config = NETWORK_CONFIG[networkName];
   
@@ -65,7 +64,6 @@ async function main() {
   console.log(`⚙️  Confirmations required: ${config.confirmations}`);
   console.log(`💰 Protocol fee: ${config.protocolFeeBps} basis points (${config.protocolFeeBps/100}%)\n`);
 
-  // Get deployment account
   const [deployer] = await ethers.getSigners();
   const deployerAddress = await deployer.getAddress();
   const deployerBalance = await ethers.provider.getBalance(deployerAddress);
@@ -73,14 +71,10 @@ async function main() {
   console.log("👤 Deployer account:", deployerAddress);
   console.log("💰 Deployer balance:", ethers.formatEther(deployerBalance), "ETH\n");
 
-  // Fee recipient (deployer for now, can be changed later)
   const feeRecipient = deployerAddress;
-  
-  // Deployment results
   const deployments = {};
 
   try {
-    // Step 1: Deploy TokenHandler
     console.log("📦 Step 1: Deploying TokenHandler...");
     const TokenHandler = await ethers.getContractFactory("TokenHandler");
     const tokenHandler = await TokenHandler.deploy();
@@ -90,11 +84,9 @@ async function main() {
     console.log("✅ TokenHandler deployed to:", tokenHandlerAddress);
     deployments.TokenHandler = tokenHandlerAddress;
 
-    // Wait for confirmations
     console.log(`⏳ Waiting for ${config.confirmations} confirmations...`);
     await tokenHandler.deploymentTransaction().wait(config.confirmations);
 
-    // Step 2: Deploy CrosslineCore
     console.log("\n📦 Step 2: Deploying CrosslineCore...");
     const CrosslineCore = await ethers.getContractFactory("CrosslineCore");
     const crosslineCore = await CrosslineCore.deploy(
@@ -109,18 +101,31 @@ async function main() {
     console.log("✅ CrosslineCore deployed to:", crosslineCoreAddress);
     deployments.CrosslineCore = crosslineCoreAddress;
 
-    // Wait for confirmations
     console.log(`⏳ Waiting for ${config.confirmations} confirmations...`);
     await crosslineCore.deploymentTransaction().wait(config.confirmations);
 
-    // Step 3: Deploy Mock Tokens (localhost only)
+    console.log("\n📦 Step 3: Deploying CrossChainManager...");
+    const CrossChainManager = await ethers.getContractFactory("CrossChainManager");
+    const crossChainManager = await CrossChainManager.deploy(crosslineCoreAddress);
+    await crossChainManager.waitForDeployment();
+    const crossChainManagerAddress = await crossChainManager.getAddress();
+    
+    console.log("✅ CrossChainManager deployed to:", crossChainManagerAddress);
+    deployments.CrossChainManager = crossChainManagerAddress;
+
+    console.log(`⏳ Waiting for ${config.confirmations} confirmations...`);
+    await crossChainManager.deploymentTransaction().wait(config.confirmations);
+
+    console.log("\n🔗 Step 4: Linking CrosslineCore with CrossChainManager...");
+    const setCrossChainManagerTx = await crosslineCore.setCrossChainManager(crossChainManagerAddress);
+    await setCrossChainManagerTx.wait();
+    console.log("✅ CrossChainManager linked to CrosslineCore");
+
     if (networkName === "localhost") {
-      console.log("\n📦 Step 3: Deploying Mock Tokens for Testing...");
+      console.log("\n📦 Step 5: Deploying Mock Tokens for Testing...");
       
-      // Deploy Mock ERC20 factory
       const MockERC20 = await ethers.getContractFactory("MockERC20");
       
-      // Deploy WETH mock
       const mockWETH = await MockERC20.deploy("Wrapped Ethereum", "WETH", 18);
       await mockWETH.waitForDeployment();
       const mockWETHAddress = await mockWETH.getAddress();
@@ -128,7 +133,6 @@ async function main() {
       deployments.MockWETH = mockWETHAddress;
       config.tokens.WETH = mockWETHAddress;
 
-      // Deploy USDC mock
       const mockUSDC = await MockERC20.deploy("USD Coin", "USDC", 6);
       await mockUSDC.waitForDeployment();
       const mockUSDCAddress = await mockUSDC.getAddress();
@@ -136,7 +140,6 @@ async function main() {
       deployments.MockUSDC = mockUSDCAddress;
       config.tokens.USDC = mockUSDCAddress;
 
-      // Deploy WBTC mock
       const mockWBTC = await MockERC20.deploy("Wrapped Bitcoin", "WBTC", 8);
       await mockWBTC.waitForDeployment();
       const mockWBTCAddress = await mockWBTC.getAddress();
@@ -144,7 +147,6 @@ async function main() {
       deployments.MockWBTC = mockWBTCAddress;
       config.tokens.WBTC = mockWBTCAddress;
 
-      // Mint initial tokens to deployer for testing
       console.log("\n💸 Minting initial tokens for testing...");
       await mockWETH.mint(deployerAddress, ethers.parseEther("1000"));
       await mockUSDC.mint(deployerAddress, ethers.parseUnits("100000", 6));
@@ -152,10 +154,8 @@ async function main() {
       console.log("✅ Minted test tokens to deployer");
     }
 
-    // Step 4: Configure TokenHandler with supported tokens
-    console.log("\n⚙️  Step 4: Configuring TokenHandler with supported tokens...");
+    console.log("\n⚙️  Step 6: Configuring TokenHandler with supported tokens...");
     
-    // Add supported tokens
     const tokenAddresses = Object.values(config.tokens).filter(addr => addr !== "0x0000000000000000000000000000000000000000");
     
     for (const tokenAddress of tokenAddresses) {
@@ -168,7 +168,6 @@ async function main() {
       }
     }
 
-    // Add native ETH support
     const NATIVE_TOKEN = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
     try {
       const tx = await tokenHandler.addSupportedToken(NATIVE_TOKEN);
@@ -179,20 +178,18 @@ async function main() {
       console.log("⚠️  Native ETH might already be supported");
     }
 
-    // Step 5: Verify deployment
-    console.log("\n🔍 Step 5: Verifying Deployment...");
+    console.log("\n🔍 Step 7: Verifying Deployment...");
     
-    // Check TokenHandler owner
     const tokenHandlerOwner = await tokenHandler.owner();
     console.log("✅ TokenHandler owner:", tokenHandlerOwner);
     
-    // Check CrosslineCore configuration
     const coreOwner = await crosslineCore.owner();
     const coreRelayer = await crosslineCore.relayer();
     const coreTokenHandler = await crosslineCore.tokenHandler();
     const coreFeeRecipient = await crosslineCore.feeRecipient();
     const coreProtocolFee = await crosslineCore.protocolFeeBps();
     const corePaused = await crosslineCore.paused();
+    const coreCrossChainManager = await crosslineCore.getCrossChainManager();
     
     console.log("✅ CrosslineCore owner:", coreOwner);
     console.log("✅ CrosslineCore relayer:", coreRelayer);
@@ -200,9 +197,14 @@ async function main() {
     console.log("✅ CrosslineCore feeRecipient:", coreFeeRecipient);
     console.log("✅ CrosslineCore protocolFee:", coreProtocolFee.toString(), "bps");
     console.log("✅ CrosslineCore paused:", corePaused);
+    console.log("✅ CrosslineCore crossChainManager:", coreCrossChainManager);
 
-    // Step 6: Save deployment information
-    console.log("\n💾 Step 6: Saving Deployment Information...");
+    const crossChainManagerOwner = await crossChainManager.owner();
+    const crossChainManagerCore = await crossChainManager.crosslineCore();
+    console.log("✅ CrossChainManager owner:", crossChainManagerOwner);
+    console.log("✅ CrossChainManager crosslineCore:", crossChainManagerCore);
+
+    console.log("\n💾 Step 8: Saving Deployment Information...");
     
     const deploymentInfo = {
       network: {
@@ -215,7 +217,8 @@ async function main() {
       configuration: {
         protocolFeeBps: config.protocolFeeBps,
         feeRecipient,
-        relayer: deployerAddress
+        relayer: deployerAddress,
+        crossChainEnabled: true
       },
       deployer: {
         address: deployerAddress,
@@ -223,7 +226,6 @@ async function main() {
       }
     };
 
-    // Save to deployments directory
     const deploymentsDir = path.join(__dirname, "..", "deployments");
     if (!fs.existsSync(deploymentsDir)) {
       fs.mkdirSync(deploymentsDir, { recursive: true });
@@ -233,27 +235,29 @@ async function main() {
     fs.writeFileSync(deploymentFile, JSON.stringify(deploymentInfo, null, 2));
     console.log("✅ Deployment info saved to:", deploymentFile);
 
-    // Print summary
     console.log("\n🎉 DEPLOYMENT COMPLETE! 🎉\n");
     console.log("📋 Summary:");
     console.log("├── Network:", config.name);
     console.log("├── TokenHandler:", tokenHandlerAddress);
     console.log("├── CrosslineCore:", crosslineCoreAddress);
+    console.log("├── CrossChainManager:", crossChainManagerAddress);
     console.log("├── Protocol Fee:", `${config.protocolFeeBps} bps (${config.protocolFeeBps/100}%)`);
     console.log("├── Fee Recipient:", feeRecipient);
+    console.log("├── Cross-Chain Enabled:", "✅");
     console.log("└── Supported Tokens:", Object.keys(config.tokens).length);
 
     console.log("\n🔗 Next Steps:");
-    console.log("1. Run 'npm run demo' to test the deployment");
-    console.log("2. Update backend configuration with contract addresses");
-    console.log("3. Configure relayer permissions if needed");
+    console.log("1. Run 'npm run deploy:crosschain' to deploy cross-chain adapters");
+    console.log("2. Run 'npm run demo' to test the deployment");
+    console.log("3. Update backend configuration with contract addresses");
+    console.log("4. Configure relayer permissions if needed");
     
     if (networkName !== "localhost") {
-      console.log("4. Verify contracts on block explorer");
-      console.log("5. Transfer ownership if deployer is not the final owner");
+      console.log("5. Verify contracts on block explorer");
+      console.log("6. Transfer ownership if deployer is not the final owner");
     }
 
-    console.log("\n✨ Ready for trading! ✨\n");
+    console.log("\n✨ Core contracts ready! Deploy cross-chain adapters next! ✨\n");
 
   } catch (error) {
     console.error("\n❌ Deployment failed:", error.message);
@@ -262,7 +266,6 @@ async function main() {
   }
 }
 
-// Handle errors
 main()
   .then(() => process.exit(0))
   .catch((error) => {

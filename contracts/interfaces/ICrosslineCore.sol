@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "./IOrder.sol";
+import "./ICrossChainAdapter.sol";
 
 /**
  * @title ICrosslineCore  
@@ -51,4 +52,35 @@ interface ICrosslineCore {
      * @return used True if nonce has been used
      */
     function isNonceUsed(address user, uint256 nonce) external view returns (bool used);
+
+    // ============= CROSS-CHAIN FUNCTIONS =============
+    
+    /**
+     * @dev Execute a cross-chain match received from an adapter
+     * @param matchData Cross-chain match data from the adapter
+     * @return success True if the match was executed successfully
+     */
+    function executeCrossChainMatch(
+        ICrossChainAdapter.CrossChainMatch calldata matchData
+    ) external returns (bool success);
+
+    /**
+     * @dev Handle cross-chain settlement confirmation from an adapter
+     * @param settlement Settlement data from the adapter
+     */
+    function handleCrossChainSettlement(
+        ICrossChainAdapter.CrossChainSettlement calldata settlement
+    ) external;
+
+    /**
+     * @dev Set the cross-chain manager contract address
+     * @param _crossChainManager Address of the CrossChainManager contract
+     */
+    function setCrossChainManager(address _crossChainManager) external;
+
+    /**
+     * @dev Get the cross-chain manager contract address
+     * @return crossChainManager Address of the CrossChainManager contract
+     */
+    function getCrossChainManager() external view returns (address crossChainManager);
 } 

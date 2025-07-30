@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "../interfaces/IOrder.sol";
 import "../interfaces/ICrosslineCore.sol";
 import "../interfaces/ICrosslineEvents.sol";
+import "../interfaces/ICrossChainAdapter.sol";
 import "../libraries/OrderValidator.sol";
 import "../libraries/SignatureVerifier.sol";
 import "./TokenHandler.sol";
@@ -29,6 +30,11 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
      * Only relayer can execute matches from the matching engine
      */
     address public relayer;
+
+    /**
+     * @dev Cross-chain manager address (can update cross-chain manager)
+     */
+    address public crossChainManager;
 
     /**
      * @dev Contract pause status for emergency stops
@@ -68,6 +74,18 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
      * matchId => executed
      */
     mapping(bytes32 => bool) public executedMatches;
+    
+    /**
+     * @dev Mapping to track pending cross-chain matches
+     * matchId => CrossChainMatch data
+     */
+    mapping(bytes32 => ICrossChainAdapter.CrossChainMatch) public pendingCrossChainMatches;
+
+    /**
+     * @dev Mapping to track cross-chain settlements
+     * matchId => CrossChainSettlement data
+     */
+    mapping(bytes32 => ICrossChainAdapter.CrossChainSettlement) public crossChainSettlements;
 
     // ============= MODIFIERS =============
 
@@ -87,6 +105,16 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
     modifier onlyRelayer() {
         if (msg.sender != relayer) {
             revert Unauthorized("onlyRelayer");
+        }
+        _;
+    }
+
+    /**
+     * @dev Restricts function access to cross-chain manager only
+     */
+    modifier onlyCrossChainManager() {
+        if (msg.sender != crossChainManager) {
+            revert Unauthorized("onlyCrossChainManager");
         }
         _;
     }
@@ -188,6 +216,14 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
     }
 
     /**
+     * @dev Get the cross-chain manager address
+     * @return crossChainManager The address of the cross-chain manager
+     */
+    function getCrossChainManager() external view override returns (address) {
+        return crossChainManager;
+    }
+
+    /**
      * @dev Get current contract configuration
      * @return _owner Contract owner address
      * @return _relayer Authorized relayer address
@@ -225,6 +261,14 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
         address oldTokenHandler = address(tokenHandler);
         tokenHandler = TokenHandler(_tokenHandler);
         emit TokenHandlerUpdated(oldTokenHandler, _tokenHandler);
+    }
+
+    /**
+     * @dev Update the cross-chain manager address
+     * @param newCrossChainManager New cross-chain manager address
+     */
+    function setCrossChainManager(address _crossChainManager) external override onlyOwner notZeroAddress(_crossChainManager) {
+        crossChainManager = _crossChainManager;
     }
 
     /**
@@ -266,7 +310,7 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
         owner = newOwner;
     }
 
-    // ============= CORE FUNCTIONS =============
+    // ============= CORE TRADING FUNCTIONS =============
 
     /**
      * @dev Execute a matched order pair
@@ -339,6 +383,104 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
         
         return true;
     }
+
+    // ============= CROSS-CHAIN FUNCTIONS =============
+
+    /**
+     * @dev Execute a cross-chain matched order pair
+     * @param matchData The cross-chain match data
+     * @return success True if execution completed successfully
+     */
+    function executeCrossChainMatch(
+        ICrossChainAdapter.CrossChainMatch calldata matchData
+    ) external override onlyCrossChainManager whenNotPaused returns (bool success) {
+        bytes32 matchId = matchData.matchId;
+        
+        if (executedMatches[matchId]) {
+            revert MatchAlreadyExecuted(matchId);
+        }
+        
+        // Store the cross-chain match data
+        pendingCrossChainMatches[matchId] = matchData;
+        
+        // Validate orders
+        _validateOrderForExecution(matchData.buyOrder, matchData.buySignature);
+        _validateOrderForExecution(matchData.sellOrder, matchData.sellSignature);
+        _validateMatchCompatibility(matchData.buyOrder, matchData.sellOrder, matchData.matchedAmount);
+        
+        // Mark nonces as used
+        usedNonces[matchData.buyOrder.userAddress][matchData.buyOrder.nonce] = true;
+        usedNonces[matchData.sellOrder.userAddress][matchData.sellOrder.nonce] = true;
+        executedMatches[matchId] = true;
+        
+        // Execute the token swap
+        _executeTokenSwapWithFees(matchData.buyOrder, matchData.sellOrder, matchData.matchedAmount, matchId);
+        
+        // Emit events
+        emit NonceUsed(matchData.buyOrder.userAddress, matchData.buyOrder.nonce, matchData.buyOrder.getOrderHash());
+        emit NonceUsed(matchData.sellOrder.userAddress, matchData.sellOrder.nonce, matchData.sellOrder.getOrderHash());
+        
+        bytes32 buyOrderHash = matchData.buyOrder.getOrderHash();
+        bytes32 sellOrderHash = matchData.sellOrder.getOrderHash();
+        
+        emit MatchExecuted(
+            matchId,
+            buyOrderHash,
+            sellOrderHash,
+            matchData.buyOrder.userAddress,
+            matchData.sellOrder.userAddress,
+            matchData.sellOrder.sellToken,
+            matchData.buyOrder.sellToken,
+            matchData.matchedAmount,
+            _calculateCorrespondingAmount(matchData.buyOrder, matchData.matchedAmount),
+            block.timestamp
+        );
+        
+        // Emit cross-chain specific event
+        emit CrossChainMatchRequested(
+            matchId,
+            matchData.buyOrder.sourceChain,
+            matchData.buyOrder.targetChain,
+            buyOrderHash
+        );
+        
+        return true;
+    }
+
+    /**
+     * @dev Handle a cross-chain settlement
+     * @param settlement The cross-chain settlement data
+     */
+    function handleCrossChainSettlement(
+        ICrossChainAdapter.CrossChainSettlement calldata settlement
+    ) external override onlyCrossChainManager {
+        bytes32 matchId = settlement.matchId;
+        
+        // Store the settlement data
+        crossChainSettlements[matchId] = settlement;
+        
+        // Emit settlement event
+        if (settlement.success) {
+            // Settlement successful
+            emit MatchExecuted(
+                matchId,
+                bytes32(0), // buyOrderHash not available in settlement
+                bytes32(0), // sellOrderHash not available in settlement
+                address(0), // buyer not available in settlement
+                address(0), // seller not available in settlement
+                address(0), // sellToken not available in settlement
+                address(0), // buyToken not available in settlement
+                0, // executedAmount not available in settlement
+                0, // correspondingAmount not available in settlement
+                settlement.timestamp
+            );
+        } else {
+            // Settlement failed - could emit a failure event if needed
+            // For now, just store the failed settlement data
+        }
+    }
+
+    // ============= ORDER CANCELLATION =============
 
     /**
      * @dev Cancel an order onchain
@@ -428,6 +570,7 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
         for (uint256 i = 0; i < nonces.length; i++) {
             used[i] = usedNonces[user][nonces[i]];
         }
+        return used;
     }
 
     /**
@@ -441,6 +584,7 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
         for (uint256 i = 0; i < orderHashes.length; i++) {
             cancelled[i] = cancelledOrders[orderHashes[i]];
         }
+        return cancelled;
     }
 
     /**
@@ -469,6 +613,7 @@ contract CrosslineCore is ICrosslineCore, ICrosslineEvents {
                 }
             }
         }
+        return (results, reasons);
     }
 
     // ============= EMERGENCY FUNCTIONS =============
