@@ -26,6 +26,17 @@ const NETWORK_CONFIG = {
       WBTC: "0x29f2D40B0605204364af54EC677bD022dA425d03"  // Sepolia WBTC (test)
     }
   },
+  monadTestnet: {
+    name: "Monad Testnet",
+    chainId: 10143,
+    confirmations: 1,
+    protocolFeeBps: 30, // 0.3%
+    tokens: {
+      WETH: "0x0000000000000000000000000000000000000000", // Will be deployed
+      USDC: "0x0000000000000000000000000000000000000000", // Will be deployed
+      WBTC: "0x0000000000000000000000000000000000000000"  // Will be deployed
+    }
+  },
   polygon: {
     name: "Polygon Mainnet",
     chainId: 137,

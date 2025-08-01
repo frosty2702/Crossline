@@ -1,0 +1,26 @@
+{
+  "network": {
+    "name": "monadTestnet",
+    "chainId": 10143,
+    "deployedAt": "2025-08-01T20:30:00.787Z"
+  },
+  "contracts": {
+    "TokenHandler": "0x466Fba963141F92fC2F27c51673b052661BF0Da0",
+    "CrosslineCore": "0xDf110709E3D01b64BC2287607909e689baa0d9d8"
+  },
+  "tokens": {
+    "WETH": "0x0000000000000000000000000000000000000000",
+    "USDC": "0x0000000000000000000000000000000000000000",
+    "WBTC": "0x0000000000000000000000000000000000000000",
+    "ETH": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+  },
+  "configuration": {
+    "protocolFeeBps": 30,
+    "feeRecipient": "0x6343d5dc8F079c0659a4C774c486425545438A29",
+    "relayer": "0x6343d5dc8F079c0659a4C774c486425545438A29"
+  },
+  "deployer": {
+    "address": "0x6343d5dc8F079c0659a4C774c486425545438A29",
+    "balance": "1.2"
+  }
+}

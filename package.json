@@ -1,37 +1,37 @@
 {
-  "name": "crossline-nextjs",
+  "name": "crossline",
   "version": "1.0.0",
-  "private": true,
+  "description": "Cross-chain gasless limit orders with MEV protection",
+  "main": "index.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:local": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "deploy:polygonAmoy": "hardhat run scripts/deploy.js --network polygonAmoy",
+    "deploy:arbitrumSepolia": "hardhat run scripts/deploy.js --network arbitrumSepolia",
+    "deploy:optimismSepolia": "hardhat run scripts/deploy.js --network optimismSepolia",
+    "deploy:baseSepolia": "hardhat run scripts/deploy.js --network baseSepolia",
+    "deploy:monad": "hardhat run scripts/deploy.js --network monadTestnet",
+    "demo": "hardhat run scripts/demo.js --network localhost",
+    "demo:sepolia": "hardhat run scripts/demo.js --network sepolia",
+    "demo:monad": "hardhat run scripts/demo.js --network monadTestnet",
+    "node": "hardhat node",
+    "clean": "hardhat clean",
+    "verify:sepolia": "hardhat run scripts/verify.js --network sepolia"
+  },
+  "keywords": ["defi", "cross-chain", "limit-orders", "mev-protection", "gasless"],
+  "author": "Crossline Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@openzeppelin/hardhat-upgrades": "^3.0.0",
+    "hardhat": "^2.19.0",
+    "dotenv": "^16.3.0"
   },
   "dependencies": {
-    "@rainbow-me/rainbowkit": "^2.1.7",
-    "@wagmi/core": "^2.13.8",
-    "@web3modal/wagmi": "^5.1.11",
-    "axios": "^1.7.7",
-    "ethers": "^6.13.4",
-    "next": "15.0.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-hot-toast": "^2.4.1",
-    "socket.io-client": "^4.8.1",
-    "viem": "^2.21.19",
-    "wagmi": "^2.12.17"
-  },
-  "devDependencies": {
-    "@eslint/eslintrc": "^3.1.0",
-    "@tailwindcss/postcss": "^0.0.2",
-    "@types/node": "^20.17.6",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "eslint": "^8.57.1",
-    "eslint-config-next": "15.0.3",
-    "postcss": "^8.5.1",
-    "tailwindcss": "^3.4.14",
-    "typescript": "^5.6.3"
+    "@openzeppelin/contracts": "^5.0.0",
+    "@openzeppelin/contracts-upgradeable": "^5.0.0",
+    "ethers": "^6.8.0"
   }
 } 

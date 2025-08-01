@@ -38,7 +38,12 @@ async function main() {
   console.log("📅 Deployed at:", deployment.network.deployedAt);
 
   // Get contract instances
-  const [deployer, user1, user2, user3] = await ethers.getSigners();
+  const signers = await ethers.getSigners();
+  const deployer = signers[0];
+  // For testnet, use the same account for all users (since we only have one private key)
+  const user1 = signers[1] || deployer;
+  const user2 = signers[2] || deployer; 
+  const user3 = signers[3] || deployer;
   
   const tokenHandler = await ethers.getContractAt("TokenHandler", deployment.contracts.TokenHandler);
   const crosslineCore = await ethers.getContractAt("CrosslineCore", deployment.contracts.CrosslineCore);
