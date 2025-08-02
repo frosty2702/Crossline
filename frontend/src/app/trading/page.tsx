@@ -8,9 +8,9 @@ import Link from 'next/link'
 import { StarsBackground } from '@/components/animate-ui/backgrounds/stars'
 
 // Contract addresses (from your deployments)
-const CROSSLINE_CORE_ADDRESS = '0x6062dfA6611B30593EF6D6990DaACd4E8121d488'
-const WETH_ADDRESS = '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14' // Our deployed WETH on Sepolia
-const USDC_ADDRESS = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' // Our deployed USDC on Sepolia
+const CROSSLINE_CORE_ADDRESS = '0x8B02e9416A0349A4934E0840485FA1Ed26FD21Ea'
+const WETH_ADDRESS = '0xA895E03B50672Bb7e23e33875D9d3223A04074BF' // Our Mock WETH on Sepolia
+const USDC_ADDRESS = '0x54EcCfc920a98f97cb2a3b375e6e4cd119e705bC' // Our Mock USDC on Sepolia
 
 // Simplified ABI for demo
 const CROSSLINE_ABI = [
@@ -215,7 +215,8 @@ export default function Trading() {
     if (!isConnected || !address) return
     
     try {
-      // Mint WETH
+      // Mint WETH first
+      console.log('Minting WETH...')
       await writeContract({
         address: WETH_ADDRESS,
         abi: [...ERC20_ABI, {
@@ -229,24 +230,33 @@ export default function Trading() {
         args: [address, parseEther('10')], // Mint 10 WETH
       })
       
-      // Mint USDC  
-      await writeContract({
-        address: USDC_ADDRESS,
-        abi: [...ERC20_ABI, {
-          "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}],
-          "name": "mint",
-          "outputs": [],
-          "stateMutability": "nonpayable",
-          "type": "function"
-        }],
-        functionName: 'mint',
-        args: [address, parseEther('10000')], // Mint 10,000 USDC
-      })
+      // Wait a moment then mint USDC
+      setTimeout(async () => {
+        try {
+          console.log('Minting USDC...')
+          await writeContract({
+            address: USDC_ADDRESS,
+            abi: [...ERC20_ABI, {
+              "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}],
+              "name": "mint",
+              "outputs": [],
+              "stateMutability": "nonpayable",
+              "type": "function"
+            }],
+            functionName: 'mint',
+            args: [address, parseEther('10000')], // Mint 10,000 USDC
+          })
+          
+          alert('🎉 Both tokens minted successfully! Wait 30 seconds then refresh to see balances.')
+        } catch (error) {
+          console.error('USDC minting error:', error)
+          alert('WETH minted! USDC failed - try clicking the button again.')
+        }
+      }, 3000)
       
-      alert('Tokens minted! Refresh the page to see your balances.')
     } catch (error) {
       console.error('Minting failed:', error)
-      alert('Minting failed - you might already have tokens or need to use a different network')
+      alert('Token minting failed. Make sure you:\n• Are on Sepolia testnet\n• Have ETH for gas\n• Approve transactions in MetaMask')
     }
   }
 

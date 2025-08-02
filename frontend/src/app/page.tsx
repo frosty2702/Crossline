@@ -23,7 +23,9 @@ export default function Home() {
           <p className="text-gray-400 mb-6 sm:mb-8">
             Connect your wallet to start trading
           </p>
-          <ConnectButton />
+          <div className="flex justify-center">
+            <ConnectButton />
+          </div>
         </div>
       </StarsBackground>
     )
