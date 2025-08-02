@@ -110,23 +110,73 @@ export default function Home() {
           {/* Features */}
           <div className="glass-card-prominent rounded-2xl p-8">
             <h2 className="text-2xl font-bold text-white mb-6">Why Crossline?</h2>
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-2 gap-6 mb-8">
               <div>
                 <h3 className="text-lg font-semibold text-blue-400 mb-2">⛽ Gasless Trading</h3>
-                <p className="text-gray-300">Create limit orders without paying gas fees</p>
+                <p className="text-gray-300">Create limit orders without paying gas fees. Our relayer network handles execution costs, making trading accessible to everyone.</p>
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-purple-400 mb-2">🌉 Cross-Chain</h3>
-                <p className="text-gray-300">Trade across Ethereum, Polygon, Arbitrum, and more</p>
+                <p className="text-gray-300">Trade across Ethereum, Polygon, Arbitrum, Monad, and more. One interface for all your multi-chain trading needs.</p>
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-green-400 mb-2">🛡️ MEV Protection</h3>
-                <p className="text-gray-300">Off-chain order book prevents front-running</p>
+                <p className="text-gray-300">Off-chain order book prevents front-running and sandwich attacks. Your trades are protected from malicious MEV extraction.</p>
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-yellow-400 mb-2">⚡ Fast Execution</h3>
-                <p className="text-gray-300">Automated matching and execution engine</p>
+                <p className="text-gray-300">Automated matching and execution engine processes orders in milliseconds. No waiting, no slippage surprises.</p>
               </div>
+              <div>
+                <h3 className="text-lg font-semibold text-cyan-400 mb-2">🔒 Non-Custodial</h3>
+                <p className="text-gray-300">You maintain full control of your assets. Smart contracts handle execution without requiring deposits or custody.</p>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-pink-400 mb-2">📈 Advanced Orders</h3>
+                <p className="text-gray-300">Set limit orders, stop-losses, and take-profits. Professional trading tools for sophisticated strategies.</p>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-orange-400 mb-2">🎯 Best Prices</h3>
+                <p className="text-gray-300">Intelligent routing finds the best execution prices across multiple DEXs and liquidity sources automatically.</p>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-indigo-400 mb-2">⏰ 24/7 Trading</h3>
+                <p className="text-gray-300">Your orders work around the clock. Set and forget - our system executes when conditions are met, even while you sleep.</p>
+              </div>
+            </div>
+            
+            {/* Additional Benefits */}
+            <div className="border-t border-white/20 pt-6">
+              <h3 className="text-xl font-bold text-white mb-4">Built for the Future of DeFi</h3>
+              <div className="grid md:grid-cols-3 gap-4">
+                <div className="glass-card rounded-lg p-4">
+                  <div className="text-2xl mb-2">🚀</div>
+                  <h4 className="font-semibold text-white mb-1">High Performance</h4>
+                  <p className="text-sm text-gray-400">Built on cutting-edge infrastructure for maximum speed and reliability</p>
+                </div>
+                <div className="glass-card rounded-lg p-4">
+                  <div className="text-2xl mb-2">🌍</div>
+                  <h4 className="font-semibold text-white mb-1">Global Access</h4>
+                  <p className="text-sm text-gray-400">Trade from anywhere in the world with just a Web3 wallet connection</p>
+                </div>
+                <div className="glass-card rounded-lg p-4">
+                  <div className="text-2xl mb-2">🔧</div>
+                  <h4 className="font-semibold text-white mb-1">Developer Friendly</h4>
+                  <p className="text-sm text-gray-400">Open-source protocol with APIs for integration and custom applications</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Call to Action */}
+            <div className="mt-8 text-center">
+              <Link 
+                href="/trading"
+                className="inline-flex items-center space-x-2 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium py-4 px-8 rounded-lg transition-colors border border-purple-400/50 text-lg"
+              >
+                <span>🚀</span>
+                <span>Start Trading Now</span>
+              </Link>
+              <p className="text-gray-400 text-sm mt-3">No registration required • Connect wallet to begin</p>
             </div>
           </div>
         </div>
