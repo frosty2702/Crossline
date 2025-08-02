@@ -1,6 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const Order = require('../models/Order');
+const { db } = require('../config/database');
 const Match = require('../models/Match');
 
 const router = express.Router();
@@ -16,18 +16,18 @@ router.get('/', async (req, res) => {
       version: '1.0.0'
     };
 
-    // Check database connection
-    if (mongoose.connection.readyState === 1) {
-      health.database = 'connected';
+    // Check database connection (demo mode)
+    if (db.isConnected()) {
+      health.database = 'connected (demo mode)';
     } else {
       health.database = 'disconnected';
       health.status = 'error';
     }
 
-    // Check basic functionality
+    // Check basic functionality (demo mode)
     try {
-      const orderCount = await Order.countDocuments();
-      const matchCount = await Match.countDocuments();
+      const orderCount = db.orders.size;
+      const matchCount = 0; // No matches stored in demo mode
       
       health.stats = {
         totalOrders: orderCount,

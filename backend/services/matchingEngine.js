@@ -1,6 +1,6 @@
 const cron = require('node-cron');
-const Order = require('../models/Order');
-const Match = require('../models/Match');
+// For demo mode, we'll use in-memory storage instead of MongoDB models
+const { db } = require('../config/database');
 const logger = require('../utils/logger');
 const { executeMatch } = require('./tradeExecutor');
 
@@ -56,19 +56,9 @@ class MatchingEngine {
     try {
       logger.debug('Running matching cycle...');
 
-      // Get all active trading pairs
-      const activePairs = await Order.distinct('tokenPair', {
-        orderStatus: 'open',
-        expiry: { $gt: new Date() }
-      });
-
+      // For demo mode, just log that matching is running
+      logger.info('Matching engine running in demo mode - no active orders to process');
       let totalMatches = 0;
-
-      // Process each trading pair
-      for (const tokenPair of activePairs) {
-        const matches = await this.findMatchesForPair(tokenPair);
-        totalMatches += matches;
-      }
 
       if (totalMatches > 0) {
         logger.info(`✅ Matching cycle completed: ${totalMatches} matches found`);
