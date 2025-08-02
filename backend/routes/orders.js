@@ -4,8 +4,42 @@ const Order = require('../models/Order');
 const { verifySignature } = require('../services/signatureVerification');
 const { validateOrder } = require('../middleware/validation');
 const logger = require('../utils/logger');
+const { db } = require('../config/database');
 
 const router = express.Router();
+
+// GET /api/orders - Fetch orders (with optional filtering)
+router.get('/', async (req, res) => {
+  try {
+    const { maker, status, tokenPair } = req.query;
+    
+    // For demo mode, return empty array or filtered from in-memory storage
+    let orders = Array.from(db.orders.values());
+    
+    // Apply filters if provided
+    if (maker) {
+      orders = orders.filter(order => order.maker.toLowerCase() === maker.toLowerCase());
+    }
+    if (status) {
+      orders = orders.filter(order => order.status === status);
+    }
+    if (tokenPair) {
+      orders = orders.filter(order => order.tokenPair === tokenPair);
+    }
+
+    res.json({
+      success: true,
+      orders: orders,
+      count: orders.length
+    });
+  } catch (error) {
+    logger.error('Error fetching orders:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal server error' 
+    });
+  }
+});
 
 // GET /api/orders - Get user's orders
 router.get('/:userAddress', 

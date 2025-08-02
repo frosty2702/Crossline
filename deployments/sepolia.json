@@ -2,11 +2,11 @@
   "network": {
     "name": "sepolia",
     "chainId": 11155111,
-    "deployedAt": "2025-08-01T20:28:50.710Z"
+    "deployedAt": "2025-08-02T17:28:03.956Z"
   },
   "contracts": {
-    "TokenHandler": "0x466Fba963141F92fC2F27c51673b052661BF0Da0",
-    "CrosslineCore": "0xDf110709E3D01b64BC2287607909e689baa0d9d8"
+    "TokenHandler": "0x89E5467528a2775aA27Cc51929aeA9B116A28F24",
+    "CrosslineCore": "0x6062dfA6611B30593EF6D6990DaACd4E8121d488"
   },
   "tokens": {
     "WETH": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
@@ -21,6 +21,6 @@
   },
   "deployer": {
     "address": "0x6343d5dc8F079c0659a4C774c486425545438A29",
-    "balance": "0.3"
+    "balance": "0.29251159844017611"
   }
 }

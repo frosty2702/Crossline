@@ -22,18 +22,25 @@
     "clean": "hardhat clean",
     "verify:sepolia": "hardhat run scripts/verify.js --network sepolia"
   },
-  "keywords": ["defi", "cross-chain", "limit-orders", "mev-protection", "gasless"],
+  "keywords": [
+    "defi",
+    "cross-chain",
+    "limit-orders",
+    "mev-protection",
+    "gasless"
+  ],
   "author": "Crossline Team",
   "license": "MIT",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@openzeppelin/hardhat-upgrades": "^3.0.0",
-    "hardhat": "^2.19.0",
-    "dotenv": "^16.3.0"
+    "dotenv": "^16.3.0",
+    "hardhat": "^2.19.0"
   },
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.0",
     "@openzeppelin/contracts-upgradeable": "^5.0.0",
+    "axios": "^1.11.0",
     "ethers": "^6.8.0"
   }
-} 
+}

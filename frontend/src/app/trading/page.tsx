@@ -8,7 +8,7 @@ import Link from 'next/link'
 import { StarsBackground } from '@/components/animate-ui/backgrounds/stars'
 
 // Contract addresses (from your deployments)
-const CROSSLINE_CORE_ADDRESS = '0xDf110709E3D01b64BC2287607909e689baa0d9d8'
+const CROSSLINE_CORE_ADDRESS = '0x6062dfA6611B30593EF6D6990DaACd4E8121d488'
 const WETH_ADDRESS = '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14' // Our deployed WETH on Sepolia
 const USDC_ADDRESS = '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' // Our deployed USDC on Sepolia
 
