@@ -9,7 +9,7 @@ export default function Home() {
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-black">
         <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-12 border border-white/20 text-center">
           <h1 className="text-6xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-6">
             Crossline
@@ -27,7 +27,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900">
+    <div className="min-h-screen bg-black">
       {/* Navigation */}
       <nav className="bg-black/20 backdrop-blur-lg border-b border-white/10">
         <div className="container mx-auto px-4">

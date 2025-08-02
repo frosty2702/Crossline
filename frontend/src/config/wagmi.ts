@@ -1,9 +1,32 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
-import { mainnet, polygon, arbitrum, sepolia, hardhat } from 'wagmi/chains'
+import { sepolia, hardhat } from 'wagmi/chains'
+
+// Custom Monad Testnet chain definition
+const monadTestnet = {
+  id: 10143,
+  name: 'Monad Testnet',
+  nativeCurrency: {
+    decimals: 18,
+    name: 'MON',
+    symbol: 'MON',
+  },
+  rpcUrls: {
+    default: {
+      http: ['https://testnet-rpc.monad.xyz'],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: 'Monad Explorer',
+      url: 'https://testnet-explorer.monad.xyz',
+    },
+  },
+  testnet: true,
+} as const
 
 export const config = getDefaultConfig({
   appName: 'Crossline - Gasless Cross-Chain Limit Orders',
   projectId: 'YOUR_WALLETCONNECT_PROJECT_ID', // Get from https://cloud.walletconnect.com
-  chains: [hardhat, sepolia, mainnet, polygon, arbitrum],
+  chains: [hardhat, sepolia, monadTestnet],
   ssr: true,
 }) 
