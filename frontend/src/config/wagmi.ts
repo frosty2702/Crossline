@@ -1,6 +1,16 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
 import { sepolia, hardhat } from 'wagmi/chains'
 
+// Custom Sepolia with reliable RPC
+const sepoliaCustom = {
+  ...sepolia,
+  rpcUrls: {
+    default: {
+      http: ['https://sepolia.drpc.org'],
+    },
+  },
+}
+
 // Custom Monad Testnet chain definition
 const monadTestnet = {
   id: 10143,
@@ -27,6 +37,6 @@ const monadTestnet = {
 export const config = getDefaultConfig({
   appName: 'Crossline - Gasless Cross-Chain Limit Orders',
   projectId: 'YOUR_WALLETCONNECT_PROJECT_ID', // Get from https://cloud.walletconnect.com
-  chains: [hardhat, sepolia, monadTestnet],
+  chains: [hardhat, sepoliaCustom, monadTestnet],
   ssr: true,
 }) 

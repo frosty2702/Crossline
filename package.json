@@ -16,6 +16,8 @@
     "demo": "hardhat run scripts/demo.js --network localhost",
     "demo:sepolia": "hardhat run scripts/demo.js --network sepolia",
     "demo:monad": "hardhat run scripts/demo.js --network monadTestnet",
+    "mint:sepolia": "hardhat run scripts/mint-tokens.js --network sepolia",
+    "mint:monad": "hardhat run scripts/mint-tokens.js --network monadTestnet",
     "node": "hardhat node",
     "clean": "hardhat clean",
     "verify:sepolia": "hardhat run scripts/verify.js --network sepolia"

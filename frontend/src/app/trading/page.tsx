@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAccount, useWriteContract, useReadContract } from 'wagmi'
 import { parseEther, formatEther } from 'viem'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
@@ -69,8 +69,69 @@ export default function Trading() {
   const [sellAmount, setSellAmount] = useState('')
   const [buyAmount, setBuyAmount] = useState('')
   const [loading, setLoading] = useState(false)
+  const [ethPrice, setEthPrice] = useState<number>(2400) // Default ETH price in USD
 
   const { writeContract } = useWriteContract()
+
+  // Fetch ETH price from API
+  useEffect(() => {
+    const fetchEthPrice = async () => {
+      try {
+        const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd')
+        const data = await response.json()
+        if (data.ethereum?.usd) {
+          setEthPrice(data.ethereum.usd)
+        }
+      } catch (error) {
+        console.log('Using default ETH price:', ethPrice)
+      }
+    }
+    fetchEthPrice()
+  }, [])
+
+  // Auto-calculate amounts when one changes
+  const handleSellAmountChange = (value: string) => {
+    setSellAmount(value)
+    if (value && !isNaN(parseFloat(value))) {
+      const sellValue = parseFloat(value)
+      if (orderType === 'buy') {
+        // Buying ETH with USDC: USDC amount / ETH price = ETH amount
+        const ethAmount = (sellValue / ethPrice).toFixed(6)
+        setBuyAmount(ethAmount)
+      } else {
+        // Selling ETH for USDC: ETH amount * ETH price = USDC amount
+        const usdcAmount = (sellValue * ethPrice).toFixed(2)
+        setBuyAmount(usdcAmount)
+      }
+    } else {
+      setBuyAmount('')
+    }
+  }
+
+  const handleBuyAmountChange = (value: string) => {
+    setBuyAmount(value)
+    if (value && !isNaN(parseFloat(value))) {
+      const buyValue = parseFloat(value)
+      if (orderType === 'buy') {
+        // Buying ETH: ETH amount * ETH price = USDC amount
+        const usdcAmount = (buyValue * ethPrice).toFixed(2)
+        setSellAmount(usdcAmount)
+      } else {
+        // Selling ETH: USDC amount / ETH price = ETH amount
+        const ethAmount = (buyValue / ethPrice).toFixed(6)
+        setSellAmount(ethAmount)
+      }
+    } else {
+      setSellAmount('')
+    }
+  }
+
+  // Update calculations when order type changes
+  useEffect(() => {
+    if (sellAmount) {
+      handleSellAmountChange(sellAmount)
+    }
+  }, [orderType, ethPrice])
 
   // Read balances
   const { data: wethBalance } = useReadContract({
@@ -149,6 +210,45 @@ export default function Trading() {
     }
   }
 
+  const handleMintTokens = async () => {
+    if (!isConnected || !address) return
+    
+    try {
+      // Mint WETH
+      await writeContract({
+        address: WETH_ADDRESS,
+        abi: [...ERC20_ABI, {
+          "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}],
+          "name": "mint",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        }],
+        functionName: 'mint',
+        args: [address, parseEther('10')], // Mint 10 WETH
+      })
+      
+      // Mint USDC  
+      await writeContract({
+        address: USDC_ADDRESS,
+        abi: [...ERC20_ABI, {
+          "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}],
+          "name": "mint",
+          "outputs": [],
+          "stateMutability": "nonpayable",
+          "type": "function"
+        }],
+        functionName: 'mint',
+        args: [address, parseEther('10000')], // Mint 10,000 USDC
+      })
+      
+      alert('Tokens minted! Refresh the page to see your balances.')
+    } catch (error) {
+      console.error('Minting failed:', error)
+      alert('Minting failed - you might already have tokens or need to use a different network')
+    }
+  }
+
   if (!isConnected) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-black">
@@ -222,22 +322,32 @@ export default function Trading() {
                   <input
                     type="number"
                     value={sellAmount}
-                    onChange={(e) => setSellAmount(e.target.value)}
+                    onChange={(e) => handleSellAmountChange(e.target.value)}
                     className="w-full bg-black/20 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400"
                     placeholder="0.0"
+                    step="any"
                   />
+                </div>
+                
+                {/* Price indicator */}
+                <div className="flex items-center justify-center py-2">
+                  <div className="text-gray-400 text-sm bg-gray-800/50 px-3 py-1 rounded-full">
+                    ≈ 1 ETH = ${ethPrice.toLocaleString()} USDC
+                  </div>
                 </div>
                 
                 <div>
                   <label className="block text-gray-300 mb-2">
-                    You Receive ({orderType === 'buy' ? 'WETH' : 'USDC'})
+                    You Receive ({orderType === 'buy' ? 'WETH' : 'USDC'}) 
+                    <span className="text-green-400 text-xs ml-2">✓ Auto-calculated</span>
                   </label>
                   <input
                     type="number"
                     value={buyAmount}
-                    onChange={(e) => setBuyAmount(e.target.value)}
+                    onChange={(e) => handleBuyAmountChange(e.target.value)}
                     className="w-full bg-black/20 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400"
                     placeholder="0.0"
+                    step="any"
                   />
                 </div>
               </div>
@@ -252,6 +362,13 @@ export default function Trading() {
                     Approve {orderType === 'buy' ? 'USDC' : 'WETH'}
                   </button>
                 </div>
+                
+                <button
+                  onClick={handleMintTokens}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+                >
+                  🪙 Get Test Tokens (10 WETH + 10,000 USDC)
+                </button>
                 
                 <button
                   onClick={handleCreateOrder}
@@ -272,6 +389,13 @@ export default function Trading() {
                   <span className="text-gray-300">Address:</span>
                   <span className="text-white font-mono text-sm">
                     {address?.slice(0, 6)}...{address?.slice(-4)}
+                  </span>
+                </div>
+                
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-300">ETH Price:</span>
+                  <span className="text-green-400 font-medium">
+                    ${ethPrice.toLocaleString()}
                   </span>
                 </div>
                 
