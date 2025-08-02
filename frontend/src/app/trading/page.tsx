@@ -283,18 +283,18 @@ export default function Trading() {
 
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl font-bold text-white mb-8">Cross-Chain Trading</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold text-white mb-6 sm:mb-8">Cross-Chain Trading</h1>
           
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
             {/* Order Form */}
-            <div className="glass-card-prominent rounded-2xl p-6">
-              <h2 className="text-2xl font-bold text-white mb-6">Create Limit Order</h2>
+            <div className="glass-card-prominent rounded-2xl p-4 sm:p-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">Create Limit Order</h2>
               
               {/* Order Type Toggle */}
-              <div className="flex bg-black/40 rounded-lg p-1 mb-6 border border-white/20">
+              <div className="flex bg-black/40 rounded-lg p-1 mb-4 sm:mb-6 border border-white/20">
                 <button
                   onClick={() => setOrderType('buy')}
-                  className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-md font-medium transition-colors text-sm sm:text-base ${
                     orderType === 'buy' 
                       ? 'bg-green-500 text-white' 
                       : 'text-gray-300 hover:text-white'
@@ -304,7 +304,7 @@ export default function Trading() {
                 </button>
                 <button
                   onClick={() => setOrderType('sell')}
-                  className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
+                  className={`flex-1 py-2 px-3 sm:px-4 rounded-md font-medium transition-colors text-sm sm:text-base ${
                     orderType === 'sell' 
                       ? 'bg-red-500 text-white' 
                       : 'text-gray-300 hover:text-white'
@@ -315,16 +315,16 @@ export default function Trading() {
               </div>
 
               {/* Amount Inputs */}
-              <div className="space-y-4 mb-6">
+              <div className="space-y-4 mb-4 sm:mb-6">
                 <div>
-                  <label className="block text-gray-300 mb-2">
+                  <label className="block text-gray-300 mb-2 text-sm sm:text-base">
                     You Pay ({orderType === 'buy' ? 'USDC' : 'WETH'})
                   </label>
                   <input
                     type="number"
                     value={sellAmount}
                     onChange={(e) => handleSellAmountChange(e.target.value)}
-                    className="w-full bg-black/40 border-2 border-white/30 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-white/50 transition-colors"
+                    className="w-full bg-black/40 border-2 border-white/30 rounded-lg px-3 sm:px-4 py-2 sm:py-3 text-white placeholder-gray-400 focus:border-white/50 transition-colors text-sm sm:text-base"
                     placeholder="0.0"
                     step="any"
                   />
@@ -332,13 +332,13 @@ export default function Trading() {
                 
                 {/* Price indicator */}
                 <div className="flex items-center justify-center py-2">
-                  <div className="text-gray-400 text-sm glass-card px-3 py-1 rounded-full">
+                  <div className="text-gray-400 text-xs sm:text-sm glass-card px-3 py-1 rounded-full">
                     ≈ 1 ETH = ${ethPrice.toLocaleString()} USDC
                   </div>
                 </div>
                 
                 <div>
-                  <label className="block text-gray-300 mb-2">
+                  <label className="block text-gray-300 mb-2 text-sm sm:text-base">
                     You Receive ({orderType === 'buy' ? 'WETH' : 'USDC'}) 
                     <span className="text-green-400 text-xs ml-2">✓ Auto-calculated</span>
                   </label>
@@ -346,7 +346,7 @@ export default function Trading() {
                     type="number"
                     value={buyAmount}
                     onChange={(e) => handleBuyAmountChange(e.target.value)}
-                    className="w-full bg-black/40 border-2 border-white/30 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-white/50 transition-colors"
+                    className="w-full bg-black/40 border-2 border-white/30 rounded-lg px-3 sm:px-4 py-2 sm:py-3 text-white placeholder-gray-400 focus:border-white/50 transition-colors text-sm sm:text-base"
                     placeholder="0.0"
                     step="any"
                   />
@@ -355,18 +355,16 @@ export default function Trading() {
 
               {/* Action Buttons */}
               <div className="space-y-3">
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => handleApprove(orderType === 'buy' ? USDC_ADDRESS : WETH_ADDRESS)}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors border border-blue-400/50"
-                  >
-                    Approve {orderType === 'buy' ? 'USDC' : 'WETH'}
-                  </button>
-                </div>
+                <button
+                  onClick={() => handleApprove(orderType === 'buy' ? USDC_ADDRESS : WETH_ADDRESS)}
+                  className="w-full sm:w-auto sm:flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 sm:py-3 px-4 rounded-lg transition-colors border border-blue-400/50 text-sm sm:text-base"
+                >
+                  Approve {orderType === 'buy' ? 'USDC' : 'WETH'}
+                </button>
                 
                 <button
                   onClick={handleMintTokens}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition-colors border border-green-400/50"
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 sm:py-3 px-4 rounded-lg transition-colors border border-green-400/50 text-sm sm:text-base"
                 >
                   🪙 Get Test Tokens (10 WETH + 10,000 USDC)
                 </button>
@@ -374,7 +372,7 @@ export default function Trading() {
                 <button
                   onClick={handleCreateOrder}
                   disabled={loading || !sellAmount || !buyAmount}
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors border border-purple-400/50"
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-2 sm:py-3 px-4 rounded-lg transition-colors border border-purple-400/50 text-sm sm:text-base"
                 >
                   {loading ? 'Creating Order...' : 'Create Limit Order'}
                 </button>
@@ -382,46 +380,46 @@ export default function Trading() {
             </div>
 
             {/* Account Info */}
-            <div className="glass-card-prominent rounded-2xl p-6">
-              <h2 className="text-2xl font-bold text-white mb-6">Account</h2>
+            <div className="glass-card-prominent rounded-2xl p-4 sm:p-6">
+              <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">Account</h2>
               
-              <div className="space-y-4">
+              <div className="space-y-3 sm:space-y-4">
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-300">Address:</span>
-                  <span className="text-white font-mono text-sm">
+                  <span className="text-gray-300 text-sm sm:text-base">Address:</span>
+                  <span className="text-white font-mono text-xs sm:text-sm break-all sm:break-normal ml-2">
                     {address?.slice(0, 6)}...{address?.slice(-4)}
                   </span>
                 </div>
                 
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-300">ETH Price:</span>
-                  <span className="text-green-400 font-medium">
+                  <span className="text-gray-300 text-sm sm:text-base">ETH Price:</span>
+                  <span className="text-green-400 font-medium text-sm sm:text-base">
                     ${ethPrice.toLocaleString()}
                   </span>
                 </div>
                 
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-300">WETH Balance:</span>
-                  <span className="text-white">
+                  <span className="text-gray-300 text-sm sm:text-base">WETH Balance:</span>
+                  <span className="text-white text-sm sm:text-base">
                     {wethBalance ? formatEther(wethBalance) : '0.0'} WETH
                   </span>
                 </div>
                 
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-300">USDC Balance:</span>
-                  <span className="text-white">
+                  <span className="text-gray-300 text-sm sm:text-base">USDC Balance:</span>
+                  <span className="text-white text-sm sm:text-base">
                     {usdcBalance ? formatEther(usdcBalance) : '0.0'} USDC
                   </span>
                 </div>
               </div>
 
               {/* Network Info */}
-              <div className="mt-6 pt-6 border-t border-white/20">
-                <h3 className="text-lg font-semibold text-white mb-3">Network</h3>
+              <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-white/20">
+                <h3 className="text-base sm:text-lg font-semibold text-white mb-3">Network</h3>
                 <div className="glass-card rounded-lg p-3 border-green-500/30">
                   <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="text-green-400 font-medium">Sepolia Testnet</span>
+                    <span className="text-green-400 font-medium text-sm sm:text-base">Sepolia Testnet</span>
                   </div>
                 </div>
               </div>
