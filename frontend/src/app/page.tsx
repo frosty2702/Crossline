@@ -3,14 +3,15 @@
 import { useAccount } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import Link from 'next/link'
+import { StarsBackground } from '@/components/animate-ui/backgrounds/stars'
 
 export default function Home() {
   const { isConnected, address } = useAccount()
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-black">
-        <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-12 border border-white/20 text-center">
+      <StarsBackground className="min-h-screen flex flex-col items-center justify-center">
+        <div className="glass-card-prominent rounded-3xl p-12 text-center">
           <h1 className="text-6xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-6">
             Crossline
           </h1>
@@ -22,12 +23,12 @@ export default function Home() {
           </p>
           <ConnectButton />
         </div>
-      </div>
+      </StarsBackground>
     )
   }
 
   return (
-    <div className="min-h-screen bg-black">
+    <StarsBackground className="min-h-screen">
       {/* Navigation */}
       <nav className="bg-black/20 backdrop-blur-lg border-b border-white/10">
         <div className="container mx-auto px-4">
@@ -65,49 +66,49 @@ export default function Home() {
           {/* Quick Actions */}
           <div className="grid md:grid-cols-3 gap-6">
             <Link href="/trading" className="group">
-              <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:bg-white/20 transition-all duration-300">
+              <div className="glass-card-prominent rounded-2xl p-6 hover:border-white/50 transition-all duration-300">
                 <h3 className="text-xl font-semibold text-white mb-2">🔄 Create Order</h3>
                 <p className="text-gray-300">Place gasless limit orders across chains</p>
               </div>
             </Link>
 
             <Link href="/orders" className="group">
-              <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:bg-white/20 transition-all duration-300">
+              <div className="glass-card-prominent rounded-2xl p-6 hover:border-white/50 transition-all duration-300">
                 <h3 className="text-xl font-semibold text-white mb-2">📋 My Orders</h3>
                 <p className="text-gray-300">View and manage active orders</p>
               </div>
             </Link>
 
             <Link href="/history" className="group">
-              <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 hover:bg-white/20 transition-all duration-300">
-                <h3 className="text-xl font-semibold text-white mb-2">📈 Trade History</h3>
-                <p className="text-gray-300">View past trades and performance</p>
+              <div className="glass-card-prominent rounded-2xl p-6 hover:border-white/50 transition-all duration-300">
+                <h3 className="text-xl font-semibold text-white mb-2">📊 Trade History</h3>
+                <p className="text-gray-300">View past trades and statistics</p>
               </div>
             </Link>
           </div>
 
           {/* Stats Cards */}
           <div className="grid md:grid-cols-4 gap-4">
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+            <div className="glass-card-prominent rounded-xl p-4">
               <h4 className="text-sm text-gray-400 mb-1">Active Orders</h4>
               <p className="text-2xl font-bold text-white">0</p>
             </div>
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+            <div className="glass-card-prominent rounded-xl p-4">
               <h4 className="text-sm text-gray-400 mb-1">Total Trades</h4>
               <p className="text-2xl font-bold text-white">0</p>
             </div>
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+            <div className="glass-card-prominent rounded-xl p-4">
               <h4 className="text-sm text-gray-400 mb-1">Volume Traded</h4>
               <p className="text-2xl font-bold text-white">$0</p>
             </div>
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
+            <div className="glass-card-prominent rounded-xl p-4">
               <h4 className="text-sm text-gray-400 mb-1">Gas Saved</h4>
               <p className="text-2xl font-bold text-green-400">100%</p>
             </div>
           </div>
 
           {/* Features */}
-          <div className="bg-white/5 backdrop-blur-lg rounded-2xl p-8 border border-white/20">
+          <div className="glass-card-prominent rounded-2xl p-8">
             <h2 className="text-2xl font-bold text-white mb-6">Why Crossline?</h2>
             <div className="grid md:grid-cols-2 gap-6">
               <div>
@@ -130,6 +131,6 @@ export default function Home() {
           </div>
         </div>
       </main>
-    </div>
+    </StarsBackground>
   )
 }

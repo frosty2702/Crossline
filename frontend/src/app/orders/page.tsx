@@ -5,6 +5,7 @@ import { useAccount } from 'wagmi'
 import { formatEther } from 'viem'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import Link from 'next/link'
+import { StarsBackground } from '@/components/animate-ui/backgrounds/stars'
 
 interface Order {
   id: string
@@ -79,17 +80,17 @@ export default function Orders() {
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black">
-        <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-12 border border-white/20 text-center">
+      <StarsBackground className="min-h-screen flex items-center justify-center">
+        <div className="glass-card-prominent rounded-3xl p-12 text-center">
           <h1 className="text-4xl font-bold text-white mb-6">Connect Wallet to View Orders</h1>
           <ConnectButton />
         </div>
-      </div>
+      </StarsBackground>
     )
   }
 
   return (
-    <div className="min-h-screen bg-black">
+    <StarsBackground className="min-h-screen">
       {/* Navigation */}
       <nav className="bg-black/20 backdrop-blur-lg border-b border-white/10">
         <div className="container mx-auto px-4">
@@ -114,7 +115,7 @@ export default function Orders() {
             <h1 className="text-4xl font-bold text-white">My Orders</h1>
             <Link 
               href="/trading"
-              className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+              className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors border border-purple-400/50"
             >
               Create New Order
             </Link>
@@ -126,18 +127,18 @@ export default function Orders() {
               <p className="text-gray-300 mt-4">Loading orders...</p>
             </div>
           ) : orders.length === 0 ? (
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-12 border border-white/20 text-center">
+            <div className="glass-card-prominent rounded-2xl p-12 text-center">
               <h2 className="text-2xl font-bold text-white mb-4">No Orders Found</h2>
               <p className="text-gray-300 mb-6">You haven't created any orders yet.</p>
               <Link 
                 href="/trading"
-                className="inline-block bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors"
+                className="inline-block bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors border border-purple-400/50"
               >
                 Create Your First Order
               </Link>
             </div>
           ) : (
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl border border-white/20 overflow-hidden">
+            <div className="glass-card-prominent rounded-2xl overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-black/20">
@@ -211,6 +212,7 @@ export default function Orders() {
           )}
         </div>
       </main>
-    </div>
+      <StarsBackground />
+    </StarsBackground>
   )
 } 

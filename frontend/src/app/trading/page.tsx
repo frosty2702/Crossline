@@ -5,6 +5,7 @@ import { useAccount, useWriteContract, useReadContract } from 'wagmi'
 import { parseEther, formatEther } from 'viem'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import Link from 'next/link'
+import { StarsBackground } from '@/components/animate-ui/backgrounds/stars'
 
 // Contract addresses (from your deployments)
 const CROSSLINE_CORE_ADDRESS = '0xDf110709E3D01b64BC2287607909e689baa0d9d8'
@@ -251,17 +252,17 @@ export default function Trading() {
 
   if (!isConnected) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black">
+      <StarsBackground className="min-h-screen flex items-center justify-center">
         <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-12 border border-white/20 text-center">
           <h1 className="text-4xl font-bold text-white mb-6">Connect Wallet to Trade</h1>
           <ConnectButton />
         </div>
-      </div>
+      </StarsBackground>
     )
   }
 
   return (
-    <div className="min-h-screen bg-black">
+    <StarsBackground className="min-h-screen">
       {/* Navigation */}
       <nav className="bg-black/20 backdrop-blur-lg border-b border-white/10">
         <div className="container mx-auto px-4">
@@ -286,11 +287,11 @@ export default function Trading() {
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Order Form */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+            <div className="glass-card-prominent rounded-2xl p-6">
               <h2 className="text-2xl font-bold text-white mb-6">Create Limit Order</h2>
               
               {/* Order Type Toggle */}
-              <div className="flex bg-black/20 rounded-lg p-1 mb-6">
+              <div className="flex bg-black/40 rounded-lg p-1 mb-6 border border-white/20">
                 <button
                   onClick={() => setOrderType('buy')}
                   className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
@@ -323,7 +324,7 @@ export default function Trading() {
                     type="number"
                     value={sellAmount}
                     onChange={(e) => handleSellAmountChange(e.target.value)}
-                    className="w-full bg-black/20 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400"
+                    className="w-full bg-black/40 border-2 border-white/30 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-white/50 transition-colors"
                     placeholder="0.0"
                     step="any"
                   />
@@ -331,7 +332,7 @@ export default function Trading() {
                 
                 {/* Price indicator */}
                 <div className="flex items-center justify-center py-2">
-                  <div className="text-gray-400 text-sm bg-gray-800/50 px-3 py-1 rounded-full">
+                  <div className="text-gray-400 text-sm glass-card px-3 py-1 rounded-full">
                     ≈ 1 ETH = ${ethPrice.toLocaleString()} USDC
                   </div>
                 </div>
@@ -345,7 +346,7 @@ export default function Trading() {
                     type="number"
                     value={buyAmount}
                     onChange={(e) => handleBuyAmountChange(e.target.value)}
-                    className="w-full bg-black/20 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400"
+                    className="w-full bg-black/40 border-2 border-white/30 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:border-white/50 transition-colors"
                     placeholder="0.0"
                     step="any"
                   />
@@ -357,7 +358,7 @@ export default function Trading() {
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleApprove(orderType === 'buy' ? USDC_ADDRESS : WETH_ADDRESS)}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors border border-blue-400/50"
                   >
                     Approve {orderType === 'buy' ? 'USDC' : 'WETH'}
                   </button>
@@ -365,7 +366,7 @@ export default function Trading() {
                 
                 <button
                   onClick={handleMintTokens}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition-colors border border-green-400/50"
                 >
                   🪙 Get Test Tokens (10 WETH + 10,000 USDC)
                 </button>
@@ -373,7 +374,7 @@ export default function Trading() {
                 <button
                   onClick={handleCreateOrder}
                   disabled={loading || !sellAmount || !buyAmount}
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors"
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors border border-purple-400/50"
                 >
                   {loading ? 'Creating Order...' : 'Create Limit Order'}
                 </button>
@@ -381,7 +382,7 @@ export default function Trading() {
             </div>
 
             {/* Account Info */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+            <div className="glass-card-prominent rounded-2xl p-6">
               <h2 className="text-2xl font-bold text-white mb-6">Account</h2>
               
               <div className="space-y-4">
@@ -417,7 +418,7 @@ export default function Trading() {
               {/* Network Info */}
               <div className="mt-6 pt-6 border-t border-white/20">
                 <h3 className="text-lg font-semibold text-white mb-3">Network</h3>
-                <div className="bg-green-500/20 border border-green-500/30 rounded-lg p-3">
+                <div className="glass-card rounded-lg p-3 border-green-500/30">
                   <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                     <span className="text-green-400 font-medium">Sepolia Testnet</span>
@@ -428,6 +429,6 @@ export default function Trading() {
           </div>
         </div>
       </main>
-    </div>
+    </StarsBackground>
   )
 } 
