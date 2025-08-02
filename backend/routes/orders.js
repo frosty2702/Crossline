@@ -8,12 +8,13 @@ const { db } = require('../config/database');
 
 const router = express.Router();
 
-// GET /api/orders - Fetch orders (with optional filtering)
+// GET /api/orders - Fetch orders (Demo version)
 router.get('/', async (req, res) => {
   try {
-    const { maker, status, tokenPair } = req.query;
+    const { maker, status } = req.query;
     
-    // For demo mode, return empty array or filtered from in-memory storage
+    // Get orders from in-memory storage
+    const { db } = require('../config/database');
     let orders = Array.from(db.orders.values());
     
     // Apply filters if provided
@@ -23,9 +24,11 @@ router.get('/', async (req, res) => {
     if (status) {
       orders = orders.filter(order => order.status === status);
     }
-    if (tokenPair) {
-      orders = orders.filter(order => order.tokenPair === tokenPair);
-    }
+
+    // Sort by creation date (newest first)
+    orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    console.log(`📋 Returning ${orders.length} orders (filtered from ${db.orders.size} total)`);
 
     res.json({
       success: true,
@@ -33,7 +36,7 @@ router.get('/', async (req, res) => {
       count: orders.length
     });
   } catch (error) {
-    logger.error('Error fetching orders:', error);
+    console.error('❌ Error fetching orders:', error);
     res.status(500).json({ 
       success: false, 
       error: 'Internal server error' 
@@ -86,99 +89,74 @@ router.get('/:userAddress',
   }
 );
 
-// POST /api/orders - Submit new order
-router.post('/',
-  validateOrder,
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ 
-          success: false, 
-          errors: errors.array() 
-        });
-      }
-
-      const orderData = req.body;
-
-      // Verify signature
-      const isValidSignature = await verifySignature(orderData);
-      if (!isValidSignature) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Invalid signature' 
-        });
-      }
-
-      // Check if order already exists (prevent duplicates)
-      const existingOrder = await Order.findOne({ nonce: orderData.nonce });
-      if (existingOrder) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Order with this nonce already exists' 
-        });
-      }
-
-      // Calculate price
-      const price = parseFloat(orderData.buyAmount) / parseFloat(orderData.sellAmount);
-
-      // Create order
-      const order = new Order({
-        userAddress: orderData.userAddress.toLowerCase(),
-        sellToken: orderData.sellToken,
-        buyToken: orderData.buyToken,
-        sellAmount: orderData.sellAmount,
-        buyAmount: orderData.buyAmount,
-        price,
-        sourceChain: orderData.sourceChain || 'ethereum',
-        targetChain: orderData.targetChain || 'ethereum',
-        orderType: orderData.orderType,
-        expiry: new Date(orderData.expiry),
-        signature: orderData.signature,
-        nonce: orderData.nonce,
-        metadata: {
-          userAgent: req.get('User-Agent'),
-          ipAddress: req.ip,
-          version: '1.0'
-        }
-      });
-
-      await order.save();
-
-      // Emit to real-time subscribers
-      const io = req.app.get('io');
-      io.to(`orderbook:${order.tokenPair}`).emit('new-order', {
-        type: 'new-order',
-        data: order
-      });
-
-      logger.info(`New order created: ${order._id} for ${order.userAddress}`);
-
-      res.status(201).json({
-        success: true,
-        data: {
-          orderId: order._id,
-          order
-        }
-      });
-
-    } catch (error) {
-      logger.error('Error creating order:', error);
-      
-      if (error.code === 11000) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Duplicate order nonce' 
-        });
-      }
-
-      res.status(500).json({ 
+// POST /api/orders - Submit new order (Demo version)
+router.post('/', async (req, res) => {
+  try {
+    console.log('📝 Received order creation request:', req.body);
+    
+    const orderData = req.body;
+    
+    // Basic validation
+    if (!orderData.maker || !orderData.sellToken || !orderData.buyToken || !orderData.sellAmount || !orderData.buyAmount) {
+      return res.status(400).json({ 
         success: false, 
-        error: 'Internal server error' 
+        error: 'Missing required order fields' 
       });
     }
+
+    // Create order ID
+    const orderId = `order_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Create order object for in-memory storage
+    const order = {
+      id: orderId,
+      maker: orderData.maker.toLowerCase(),
+      sellToken: orderData.sellToken,
+      buyToken: orderData.buyToken,
+      sellAmount: orderData.sellAmount,
+      buyAmount: orderData.buyAmount,
+      expiry: orderData.expiry,
+      nonce: orderData.nonce,
+      chainId: orderData.chainId,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      tokenPair: `${orderData.sellToken}/${orderData.buyToken}`
+    };
+
+    // Store in memory
+    const { db } = require('../config/database');
+    db.orders.set(orderId, order);
+    
+    console.log('✅ Order created successfully:', orderId);
+    console.log('📊 Total orders in memory:', db.orders.size);
+
+    // Emit to real-time subscribers (if io is available)
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('new-order', order);
+      }
+    } catch (ioError) {
+      console.log('Socket.io not available, skipping real-time emit');
+    }
+
+    res.status(201).json({
+      success: true,
+      data: {
+        order,
+        message: 'Order created successfully'
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error creating order:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal server error',
+      details: error.message 
+    });
   }
-);
+});
 
 // GET /api/orders/:orderId - Get specific order
 router.get('/order/:orderId',
