@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const logger = require('../utils/logger');
 
-// MongoDB connection string - use environment variable or default to local
+// MongoDB connection string - PRODUCTION ONLY
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/crossline';
 
 let isConnected = false;
@@ -18,18 +18,8 @@ const connectDB = async () => {
 
     logger.info('📦 Connecting to MongoDB for PRODUCTION...');
     
-    // MongoDB connection options
-    const options = {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      bufferCommands: false,
-      bufferMaxEntries: 0
-    };
-
-    await mongoose.connect(MONGODB_URI, options);
+    // Simple MongoDB connection
+    await mongoose.connect(MONGODB_URI);
     
     isConnected = true;
     logger.info('✅ MongoDB connected successfully (PRODUCTION MODE)');
@@ -53,13 +43,11 @@ const connectDB = async () => {
     });
 
   } catch (error) {
-    logger.error('❌ MongoDB connection failed:', error.message);
-    logger.warn('⚠️ HACKATHON MODE: Running without MongoDB for demo');
-    logger.warn('💡 For production: brew services start mongodb-community');
-    
-    // For hackathon demo - continue without MongoDB
-    isConnected = false;
-    logger.info('✅ Backend running in HACKATHON MODE (no database)');
+    console.error('❌ MongoDB connection failed:', error.message);
+    console.error('🔍 Full error:', error.toString());
+    console.error('🚨 PRODUCTION REQUIREMENT: MongoDB must be running!');
+    console.error('💡 Start MongoDB with: brew services start mongodb-community');
+    process.exit(1); // Exit if MongoDB is not available - PRODUCTION ONLY!
   }
 };
 

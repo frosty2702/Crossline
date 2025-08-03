@@ -77,10 +77,12 @@ class MatchingEngine {
       let totalMatches = 0;
       const storage = getStorage();
 
-      if (storage.type === 'in-memory') {
-        totalMatches = await this.matchOrdersInMemory(storage);
-      } else {
+      // Production mode - use MongoDB
+      if (storage.type === 'mongodb' && storage.connected) {
         totalMatches = await this.matchOrdersMongoDB();
+      } else {
+        logger.warn('⚠️ MongoDB not connected - skipping matching cycle');
+        return;
       }
 
       const duration = Date.now() - startTime;
@@ -112,37 +114,10 @@ class MatchingEngine {
   /**
    * Match orders using in-memory storage
    */
-  async matchOrdersInMemory(storage) {
-    const orders = Array.from(storage.orders.values());
-    const activeOrders = orders.filter(order => 
-      order.status === 'active' && 
-      new Date(order.expiry) > new Date()
-    );
-
-    if (activeOrders.length < 2) {
-      return 0;
-    }
-
-    let totalMatches = 0;
-    const processedOrders = new Set();
-
-    // Group orders by token pairs
-    const ordersByPair = this.groupOrdersByTokenPair(activeOrders);
-
-    for (const [tokenPair, pairOrders] of Object.entries(ordersByPair)) {
-      const matches = await this.findMatchesForPair(pairOrders);
-      
-      for (const match of matches) {
-        if (!processedOrders.has(match.buyOrder.id) && !processedOrders.has(match.sellOrder.id)) {
-          await this.processMatch(match, storage);
-          processedOrders.add(match.buyOrder.id);
-          processedOrders.add(match.sellOrder.id);
-          totalMatches++;
-        }
-      }
-    }
-
-    return totalMatches;
+  async matchOrdersInMemory() {
+    // For hackathon demo - just log that matching is running
+    logger.debug('🔄 In-memory matching cycle running (HACKATHON MODE)');
+    return 0; // No matches for demo
   }
 
   /**
