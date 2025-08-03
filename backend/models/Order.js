@@ -76,7 +76,7 @@ const orderSchema = new mongoose.Schema({
   // Order status and execution
   status: {
     type: String,
-    enum: ['active', 'filled', 'cancelled', 'expired'],
+    enum: ['active', 'filled', 'cancelled', 'expired', 'matching', 'executing', 'cross_chain_messaging', 'completed'],
     default: 'active',
     index: true
   },
@@ -100,14 +100,23 @@ const orderSchema = new mongoose.Schema({
     }
   },
   
-  // Cross-chain data
-  sourceChain: {
-    type: String,
-    default: 'ethereum'
+  // Cross-chain specific fields
+  crossChain: {
+    type: Boolean,
+    default: false,
+    index: true
   },
+  
+  sourceChain: {
+    type: Number,
+    required: false, // Only required for cross-chain orders
+    index: true
+  },
+  
   targetChain: {
-    type: String,
-    default: 'ethereum'
+    type: Number,
+    required: false, // Only required for cross-chain orders
+    index: true
   },
   
   // Trading data

@@ -385,37 +385,8 @@ export default function Trading() {
   // Show warning if on Monad (contracts not deployed there)
   const showNetworkWarning = chainId === 10143
 
-  if (!isConnected) {
-    return (
-      <StarsBackground className="min-h-screen flex items-center justify-center">
-        <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-12 border-2 border-white/80 text-center">
-          <h1 className="text-4xl font-bold text-white mb-6">Connect Wallet to Trade</h1>
-          <ConnectButton />
-        </div>
-      </StarsBackground>
-    )
-  }
-
   return (
     <StarsBackground className="min-h-screen">
-      {/* Navigation */}
-      <nav className="bg-black/20 backdrop-blur-lg border-b border-white/10">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/" className="flex items-center space-x-2">
-              <img src="/crossline-logo.svg" alt="Crossline" className="w-8 h-8" />
-              <span className="text-xl font-bold text-white">Crossline</span>
-            </Link>
-            <div className="flex items-center space-x-6">
-              <Link href="/trading" className="text-white font-medium">Trading</Link>
-              <Link href="/orders" className="text-gray-300 hover:text-white">Orders</Link>
-              <Link href="/history" className="text-gray-300 hover:text-white">History</Link>
-              <ConnectButton />
-            </div>
-          </div>
-        </div>
-      </nav>
-
       <main className="container mx-auto px-4 py-8">
         <div className="max-w-7xl mx-auto">
           
@@ -430,7 +401,10 @@ export default function Trading() {
             </div>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl font-bold text-white mb-6 sm:mb-8">Cross-Chain Trading</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold text-white mb-6 sm:mb-8">Trading</h1>
+          <p className="text-xl text-gray-300 text-center mb-8">
+            Create gasless limit orders on Sepolia testnet with MEV protection
+          </p>
 
           {/* Network Warning */}
           {showNetworkWarning && (

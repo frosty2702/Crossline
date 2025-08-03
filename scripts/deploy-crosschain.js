@@ -48,6 +48,18 @@ const CROSS_CHAIN_CONFIG = {
       gasService: "0x2d5d7d31F671F86C782533cc367F14109a082712", // Arbitrum gas service
       deployed: true
     }
+  },
+  monadTestnet: {
+    // Monad testnet - use mock endpoints for now since it's a new chain
+    layerZero: {
+      endpoint: "0x0000000000000000000000000000000000000000", // Mock for Monad (LZ not deployed yet)
+      deployed: false
+    },
+    axelar: {
+      gateway: "0x0000000000000000000000000000000000000000", // Mock for Monad (Axelar not deployed yet)
+      gasService: "0x0000000000000000000000000000000000000000", // Mock for Monad
+      deployed: false
+    }
   }
 };
 

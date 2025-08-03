@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RainbowKitProvider } from '@rainbow-me/rainbowkit'
 import { config } from '../config/wagmi'
 import { Toaster } from 'react-hot-toast'
+import Navbar from '../components/Navbar'
 
 import '@rainbow-me/rainbowkit/styles.css'
 
@@ -29,6 +30,7 @@ export default function RootLayout({
         <WagmiProvider config={config}>
           <QueryClientProvider client={queryClient}>
             <RainbowKitProvider>
+              <Navbar />
               {children}
               <Toaster position="top-right" />
             </RainbowKitProvider>

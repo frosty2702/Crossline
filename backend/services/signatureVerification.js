@@ -32,6 +32,21 @@ const ORDER_TYPE = {
   ]
 };
 
+// Cross-chain order type definition for EIP-712
+const CROSS_CHAIN_ORDER_TYPE = {
+  CrossChainOrder: [
+    { name: 'maker', type: 'address' },
+    { name: 'sellToken', type: 'address' },
+    { name: 'buyToken', type: 'address' },
+    { name: 'sellAmount', type: 'uint256' },
+    { name: 'buyAmount', type: 'uint256' },
+    { name: 'expiry', type: 'uint256' },
+    { name: 'nonce', type: 'uint256' },
+    { name: 'chainId', type: 'uint256' },
+    { name: 'targetChain', type: 'uint256' }
+  ]
+};
+
 /**
  * Verify EIP-712 signature for an order
  * @param {Object} orderData - The order data
@@ -180,9 +195,76 @@ function getTypedDataForSigning(orderData) {
   };
 }
 
+/**
+ * Verify EIP-712 signature for a cross-chain order
+ * @param {Object} orderData - The cross-chain order data
+ * @param {string} signature - The signature to verify
+ * @returns {Promise<boolean>} - True if signature is valid
+ */
+async function verifyCrossChainOrderSignature(orderData, signature) {
+  try {
+    // Get contract addresses for the source chain
+    const contractAddresses = getContractAddresses(orderData.chainId);
+    
+    // Create domain with dynamic contract address
+    const domain = {
+      name: 'Crossline',
+      version: '1',
+      chainId: orderData.chainId,
+      verifyingContract: contractAddresses.crosslineCore
+    };
+
+    // Prepare the cross-chain order object for EIP-712
+    const order = {
+      maker: orderData.maker,
+      sellToken: orderData.sellToken,
+      buyToken: orderData.buyToken,
+      sellAmount: orderData.sellAmount.toString(),
+      buyAmount: orderData.buyAmount.toString(),
+      expiry: orderData.expiry.toString(),
+      nonce: orderData.nonce.toString(),
+      chainId: orderData.chainId.toString(),
+      targetChain: orderData.targetChain.toString()
+    };
+
+    // Create the typed data for cross-chain order
+    const typedData = {
+      domain: domain,
+      types: CROSS_CHAIN_ORDER_TYPE,
+      primaryType: 'CrossChainOrder',
+      message: order
+    };
+
+    // Recover the signer address from the signature
+    const recoveredAddress = ethers.verifyTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message,
+      signature
+    );
+
+    // Check if recovered address matches the maker
+    const isValid = recoveredAddress.toLowerCase() === orderData.maker.toLowerCase();
+    
+    if (isValid) {
+      logger.info(`✅ Cross-chain signature verified for order from ${orderData.maker}`);
+    } else {
+      logger.warn(`❌ Invalid cross-chain signature for order from ${orderData.maker}. Recovered: ${recoveredAddress}`);
+    }
+
+    return isValid;
+
+  } catch (error) {
+    logger.error('Error verifying cross-chain signature:', error);
+    return false;
+  }
+}
+
 module.exports = {
   verifyOrderSignature,
+  verifyCrossChainOrderSignature,
   getOrderHash,
   getTypedDataForSigning,
-  ORDER_TYPE
+  ORDER_TYPE,
+  CROSS_CHAIN_ORDER_TYPE
 }; 

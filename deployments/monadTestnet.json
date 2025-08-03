@@ -2,7 +2,8 @@
   "network": {
     "name": "monadTestnet",
     "chainId": 10143,
-    "deployedAt": "2025-08-01T20:30:00.787Z"
+    "deployedAt": "2025-08-01T20:30:00.787Z",
+    "crossChainDeployedAt": "2025-08-03T12:04:06.283Z"
   },
   "contracts": {
     "TokenHandler": "0x466Fba963141F92fC2F27c51673b052661BF0Da0",
@@ -22,5 +23,19 @@
   "deployer": {
     "address": "0x6343d5dc8F079c0659a4C774c486425545438A29",
     "balance": "1.2"
+  },
+  "crossChain": {
+    "adapters": {
+      "CrossChainManager": "0xD6Ee17e1be7129c9c1A03C8E21e84A18e9bA11f9"
+    },
+    "configuration": {
+      "layerZeroSupported": false,
+      "axelarSupported": false,
+      "endpoints": {
+        "layerZero": "0x0000000000000000000000000000000000000000",
+        "axelarGateway": "0x0000000000000000000000000000000000000000",
+        "axelarGasService": "0x0000000000000000000000000000000000000000"
+      }
+    }
   }
 }

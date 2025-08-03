@@ -15,7 +15,6 @@ interface Stats {
 
 export default function Home() {
   const { isConnected, address } = useAccount()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [stats, setStats] = useState<Stats>({
     activeOrders: 0,
     totalTrades: 0,
@@ -86,72 +85,6 @@ export default function Home() {
 
   return (
     <StarsBackground className="min-h-screen">
-      {/* Navigation */}
-      <nav className="bg-black/20 backdrop-blur-lg border-b border-white/10">
-        <div className="container mx-auto px-4">
-          <div className="flex items-center justify-between h-16">
-            <Link href="/" className="flex items-center space-x-2">
-              <img src="/crossline-logo.svg" alt="Crossline" className="w-8 h-8" />
-              <span className="text-xl font-bold text-white">Crossline</span>
-            </Link>
-            
-            {/* Desktop Navigation */}
-            <div className="hidden md:flex items-center space-x-6">
-              <Link href="/trading" className="text-gray-300 hover:text-white transition-colors">Trading</Link>
-              <Link href="/orders" className="text-gray-300 hover:text-white transition-colors">Orders</Link>
-              <Link href="/history" className="text-gray-300 hover:text-white transition-colors">History</Link>
-              <ConnectButton />
-            </div>
-
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden text-white p-2"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                {mobileMenuOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                )}
-              </svg>
-            </button>
-          </div>
-
-          {/* Mobile Navigation Menu */}
-          {mobileMenuOpen && (
-            <div className="md:hidden border-t border-white/10 py-4">
-              <div className="flex flex-col space-y-4">
-                <Link 
-                  href="/trading" 
-                  className="text-gray-300 hover:text-white transition-colors px-2"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Trading
-                </Link>
-                <Link 
-                  href="/orders" 
-                  className="text-gray-300 hover:text-white transition-colors px-2"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  Orders
-                </Link>
-                <Link 
-                  href="/history" 
-                  className="text-gray-300 hover:text-white transition-colors px-2"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  History
-                </Link>
-                <div className="px-2">
-                  <ConnectButton />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </nav>
-
       {/* Main Content */}
       <main className="container mx-auto px-4 py-6 sm:py-8">
         <div className="space-y-6 sm:space-y-8">
@@ -166,31 +99,6 @@ export default function Home() {
             <p className="text-xs sm:text-sm text-gray-400 mt-2 break-all sm:break-normal">
               Connected: {address}
             </p>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
-            <Link href="/trading">
-              <div className="glass-card-prominent rounded-2xl p-4 sm:p-6 hover:border-white/90 transition-all duration-300">
-                <div className="text-2xl sm:text-3xl mb-2 sm:mb-3">📊</div>
-                <h3 className="text-lg sm:text-xl font-bold text-white mb-2">Create Order</h3>
-                <p className="text-gray-300 text-sm sm:text-base">Place gasless limit orders across chains</p>
-              </div>
-            </Link>
-            <Link href="/orders">
-              <div className="glass-card-prominent rounded-2xl p-4 sm:p-6 hover:border-white/90 transition-all duration-300">
-                <div className="text-2xl sm:text-3xl mb-2 sm:mb-3">📋</div>
-                <h3 className="text-lg sm:text-xl font-bold text-white mb-2">My Orders</h3>
-                <p className="text-gray-300 text-sm sm:text-base">View and manage active orders</p>
-              </div>
-            </Link>
-            <Link href="/history">
-              <div className="glass-card-prominent rounded-2xl p-4 sm:p-6 hover:border-white/90 transition-all duration-300">
-                <div className="text-2xl sm:text-3xl mb-2 sm:mb-3">📈</div>
-                <h3 className="text-lg sm:text-xl font-bold text-white mb-2">Trade History</h3>
-                <p className="text-gray-300 text-sm sm:text-base">View past trades and statistics</p>
-              </div>
-            </Link>
           </div>
 
           {/* Stats Cards */}

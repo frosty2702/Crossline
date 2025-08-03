@@ -57,7 +57,15 @@ class MatchingEngine {
     }
     
     if (this.cronJob) {
-      this.cronJob.destroy();
+      try {
+        if (typeof this.cronJob.destroy === 'function') {
+          this.cronJob.destroy();
+        } else if (typeof this.cronJob.stop === 'function') {
+          this.cronJob.stop();
+        }
+      } catch (error) {
+        logger.warn('⚠️ Could not stop cron job:', error.message);
+      }
       this.cronJob = null;
     }
     

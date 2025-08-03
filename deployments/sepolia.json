@@ -2,7 +2,8 @@
   "network": {
     "name": "sepolia",
     "chainId": 11155111,
-    "deployedAt": "2025-08-02T20:05:38.774Z"
+    "deployedAt": "2025-08-02T20:05:38.774Z",
+    "crossChainDeployedAt": "2025-08-03T12:02:48.642Z"
   },
   "contracts": {
     "TokenHandler": "0x2DF592DfF4aE0EbB01a179e42cB1653b2eF65F70",
@@ -26,5 +27,21 @@
   "mockTokens": {
     "WETH": "0xA895E03B50672Bb7e23e33875D9d3223A04074BF",
     "USDC": "0x54EcCfc920a98f97cb2a3b375e6e4cd119e705bC"
+  },
+  "crossChain": {
+    "adapters": {
+      "CrossChainManager": "0xfE1614f1077a95021d54b6178aD27CA91d5C2283",
+      "LayerZeroAdapter": "0x45a15dd9715b8d57e544da6faDf650CE297D5434",
+      "AxelarAdapter": "0xa3109159400C7E5b200F088DfE38B282FbcD5a51"
+    },
+    "configuration": {
+      "layerZeroSupported": true,
+      "axelarSupported": true,
+      "endpoints": {
+        "layerZero": "0xae92d5aD7583AD66E49A0c67BAd18F6ba52dDDc1",
+        "axelarGateway": "0xe432150cce91c13a887f7D836923d5597adD8E31",
+        "axelarGasService": "0xbE406F0189A0B4cf3A05C286473D23791Dd44Cc6"
+      }
+    }
   }
 }
