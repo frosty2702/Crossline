@@ -122,7 +122,7 @@ export default function History() {
           ) : trades.length === 0 ? (
             <div className="glass-card-prominent rounded-2xl p-12 text-center">
               <h2 className="text-2xl font-bold text-white mb-4">No Trades Found</h2>
-              <p className="text-gray-300 mb-6">You haven't completed any trades yet.</p>
+              <p className="text-gray-300 mb-6">You haven&apos;t completed any trades yet.</p>
               <Link 
                 href="/trading"
                 className="inline-block bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors border border-purple-400/50"

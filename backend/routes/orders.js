@@ -612,3 +612,98 @@ function getDemoStageMessage(stage) {
 }
 
 module.exports = router; 
+    });
+  }
+});
+
+// Demo endpoint for hackathon - instantly process orders for presentation
+router.post('/demo/process/:orderId', async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const order = await Order.findById(orderId);
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found'
+      });
+    }
+
+    if (order.status !== 'active') {
+      return res.status(400).json({
+        success: false,
+        error: 'Order is not active'
+      });
+    }
+
+    // Simulate order processing for demo
+    logger.info(`🎭 DEMO: Processing order ${orderId} for hackathon demo`);
+    
+    // Update order status to show processing stages
+    const stages = ['matching', 'executing', 'cross_chain_messaging', 'completed'];
+    
+    for (let i = 0; i < stages.length; i++) {
+      const stage = stages[i];
+      
+      // Update order status
+      order.status = stage;
+      order.updatedAt = new Date();
+      
+      if (stage === 'completed') {
+        order.filledAmount = order.sellAmount;
+        order.completedAt = new Date();
+      }
+      
+      await order.save();
+      
+      // Emit real-time update
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('order-update', {
+          type: 'status-change',
+          orderId: order._id,
+          status: stage,
+          message: getDemoStageMessage(stage),
+          timestamp: new Date()
+        });
+      }
+      
+      logger.info(`🎭 DEMO: Order ${orderId} → ${stage.toUpperCase()}`);
+      
+      // Wait between stages for dramatic effect
+      if (i < stages.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Order processed successfully (DEMO MODE)',
+      data: {
+        orderId: order._id,
+        finalStatus: 'completed',
+        stages: stages
+      }
+    });
+
+  } catch (error) {
+    logger.error('❌ Demo processing failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Demo processing failed'
+    });
+  }
+});
+
+// Helper function for demo stage messages
+function getDemoStageMessage(stage) {
+  const messages = {
+    'matching': '🔍 Finding compatible orders...',
+    'executing': '⚡ Executing trade on source chain...',
+    'cross_chain_messaging': '🌐 Processing via LayerZero/Axelar...',
+    'completed': '✅ Cross-chain trade completed!'
+  };
+  return messages[stage] || 'Processing...';
+}
+
+module.exports = router; 

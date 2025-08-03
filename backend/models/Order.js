@@ -260,3 +260,12 @@ orderSchema.methods.fill = function(amount, txHash = null) {
 
 // Export the model
 module.exports = mongoose.model('Order', orderSchema); 
+  if (txHash) {
+    this.executionTxHash = txHash;
+  }
+  
+  return this.save();
+};
+
+// Export the model
+module.exports = mongoose.model('Order', orderSchema); 
