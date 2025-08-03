@@ -16,7 +16,7 @@ const validateOrderCreation = [
   body('expiry').isInt({ min: Math.floor(Date.now() / 1000) }).withMessage('Expiry must be in the future'),
   body('nonce').matches(/^\d+$/).withMessage('Invalid nonce'),
   body('chainId').isInt({ min: 1 }).withMessage('Invalid chain ID'),
-  body('signature').matches(/^0x[a-fA-F0-9]{130}$/).withMessage('Invalid signature format')
+  body('signature').isString().isLength({ min: 1 }).withMessage('Signature is required')
 ];
 
 // GET /api/orders - Fetch orders with advanced filtering
@@ -112,6 +112,10 @@ router.post('/', validateOrderCreation, async (req, res) => {
 
     const orderData = req.body;
     logger.info('📝 Processing order creation request from:', orderData.maker);
+    logger.info('🔍 Received signature:', orderData.signature);
+    logger.info('🔍 Signature type:', typeof orderData.signature);
+    logger.info('🔍 Signature length:', orderData.signature?.length);
+    logger.info('🔍 Full order data:', JSON.stringify(orderData, null, 2));
 
     // Generate order hash
     const orderHash = getOrderHash(orderData);

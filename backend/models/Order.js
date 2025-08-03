@@ -118,7 +118,7 @@ const orderSchema = new mongoose.Schema({
   },
   tokenPair: {
     type: String,
-    required: true,
+    required: false, // Auto-generated in pre-save hook
     index: true
   },
   

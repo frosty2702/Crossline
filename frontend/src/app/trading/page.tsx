@@ -80,7 +80,7 @@ export default function Trading() {
   const [ethPrice, setEthPrice] = useState<number>(2400) // Default ETH price in USD
 
   const { writeContract } = useWriteContract()
-  const { signTypedData } = useSignTypedData()
+  const { signTypedDataAsync } = useSignTypedData()
 
   // Get contract addresses based on current network
   const getContractAddresses = () => {
@@ -221,39 +221,58 @@ export default function Trading() {
       }
 
       // Sign the order
-      const signature = await signTypedData({
-        domain,
-        types,
-        primaryType: 'Order',
-        message: orderData
-      })
+      console.log('About to sign typed data...')
+      try {
+        const signature = await signTypedDataAsync({
+          domain,
+          types,
+          primaryType: 'Order',
+          message: orderData
+        })
 
-      // Add signature to order data
-      const signedOrderData = {
-        ...orderData,
-        signature
-      }
+        console.log('Generated signature:', signature)
+        console.log('Signature type:', typeof signature)
+        if (signature) {
+          console.log('Signature length:', signature.length)
+        }
+        console.log('Order data being signed:', orderData)
 
-      // Submit to backend API
-      const response = await fetch('http://localhost:8080/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(signedOrderData)
-      })
+        if (!signature) {
+          throw new Error('Signature generation failed - user may have rejected the signing request')
+        }
 
-      console.log('Response status:', response.status)
-      console.log('Response headers:', response.headers)
+        // Add signature to order data
+        const signedOrderData = {
+          ...orderData,
+          signature
+        }
 
-      if (response.ok) {
-        const result = await response.json()
-        console.log('Order created successfully:', result)
-        alert('Order created successfully!')
-        setSellAmount('')
-        setBuyAmount('')
-      } else {
-        const errorData = await response.json()
-        console.error('Backend error:', errorData)
-        throw new Error(errorData.error || errorData.errors?.[0]?.msg || 'Failed to create order')
+        console.log('Full signed order data:', signedOrderData)
+
+        // Submit to backend API
+        const response = await fetch('http://localhost:8080/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(signedOrderData)
+        })
+
+        console.log('Response status:', response.status)
+        console.log('Response headers:', response.headers)
+
+        if (response.ok) {
+          const result = await response.json()
+          console.log('Order created successfully:', result)
+          alert('Order created successfully!')
+          setSellAmount('')
+          setBuyAmount('')
+        } else {
+          const errorData = await response.json()
+          console.error('Backend error:', errorData)
+          throw new Error(errorData.error || errorData.errors?.[0]?.msg || 'Failed to create order')
+        }
+      } catch (signError) {
+        console.error('Signature generation failed:', signError)
+        throw new Error('Failed to sign order: ' + (signError instanceof Error ? signError.message : 'Unknown error'))
       }
     } catch (error) {
       console.error('Error creating order:', error)
