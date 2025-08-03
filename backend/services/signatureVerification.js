@@ -1,13 +1,22 @@
 const { ethers } = require('ethers');
 const logger = require('../utils/logger');
 
-// EIP-712 Domain
-const DOMAIN = {
-  name: 'Crossline',
-  version: '1',
-  chainId: 11155111, // Sepolia
-  verifyingContract: '0x8B02e9416A0349A4934E0840485FA1Ed26FD21Ea' // CrosslineCore address
-};
+// Get contract addresses based on chain ID
+function getContractAddresses(chainId) {
+  if (chainId === 10143) { // Monad Testnet
+    return {
+      crosslineCore: '0x0000000000000000000000000000000000000000', // TODO: Deploy on Monad
+      weth: '0x0000000000000000000000000000000000000000',
+      usdc: '0x0000000000000000000000000000000000000000'
+    }
+  } else { // Sepolia or default
+    return {
+      crosslineCore: '0x8B02e9416A0349A4934E0840485FA1Ed26FD21Ea',
+      weth: '0xA895E03B50672Bb7e23e33875D9d3223A04074BF',
+      usdc: '0x54EcCfc920a98f97cb2a3b375e6e4cd119e705bC'
+    }
+  }
+}
 
 // Order type definition for EIP-712
 const ORDER_TYPE = {
@@ -31,6 +40,17 @@ const ORDER_TYPE = {
  */
 async function verifyOrderSignature(orderData, signature) {
   try {
+    // Get contract addresses for the chain
+    const contractAddresses = getContractAddresses(orderData.chainId);
+    
+    // Create domain with dynamic contract address
+    const domain = {
+      name: 'Crossline',
+      version: '1',
+      chainId: orderData.chainId,
+      verifyingContract: contractAddresses.crosslineCore
+    };
+
     // Prepare the order object for EIP-712
     const order = {
       maker: orderData.maker,
@@ -45,7 +65,7 @@ async function verifyOrderSignature(orderData, signature) {
 
     // Create the typed data
     const typedData = {
-      domain: DOMAIN,
+      domain: domain,
       types: ORDER_TYPE,
       primaryType: 'Order',
       message: order
@@ -83,6 +103,17 @@ async function verifyOrderSignature(orderData, signature) {
  */
 function getOrderHash(orderData) {
   try {
+    // Get contract addresses for the chain
+    const contractAddresses = getContractAddresses(orderData.chainId);
+    
+    // Create domain with dynamic contract address
+    const domain = {
+      name: 'Crossline',
+      version: '1',
+      chainId: orderData.chainId,
+      verifyingContract: contractAddresses.crosslineCore
+    };
+
     const order = {
       maker: orderData.maker,
       sellToken: orderData.sellToken,
@@ -95,7 +126,7 @@ function getOrderHash(orderData) {
     };
 
     const typedData = {
-      domain: DOMAIN,
+      domain: domain,
       types: ORDER_TYPE,
       primaryType: 'Order',
       message: order
@@ -119,6 +150,17 @@ function getOrderHash(orderData) {
  * @returns {Object} - The EIP-712 typed data
  */
 function getTypedDataForSigning(orderData) {
+  // Get contract addresses for the chain
+  const contractAddresses = getContractAddresses(orderData.chainId);
+  
+  // Create domain with dynamic contract address
+  const domain = {
+    name: 'Crossline',
+    version: '1',
+    chainId: orderData.chainId,
+    verifyingContract: contractAddresses.crosslineCore
+  };
+
   const order = {
     maker: orderData.maker,
     sellToken: orderData.sellToken,
@@ -131,7 +173,7 @@ function getTypedDataForSigning(orderData) {
   };
 
   return {
-    domain: DOMAIN,
+    domain: domain,
     types: ORDER_TYPE,
     primaryType: 'Order',
     message: order
@@ -142,6 +184,5 @@ module.exports = {
   verifyOrderSignature,
   getOrderHash,
   getTypedDataForSigning,
-  DOMAIN,
   ORDER_TYPE
 }; 

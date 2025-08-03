@@ -241,13 +241,19 @@ export default function Trading() {
         body: JSON.stringify(signedOrderData)
       })
 
+      console.log('Response status:', response.status)
+      console.log('Response headers:', response.headers)
+
       if (response.ok) {
+        const result = await response.json()
+        console.log('Order created successfully:', result)
         alert('Order created successfully!')
         setSellAmount('')
         setBuyAmount('')
       } else {
         const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to create order')
+        console.error('Backend error:', errorData)
+        throw new Error(errorData.error || errorData.errors?.[0]?.msg || 'Failed to create order')
       }
     } catch (error) {
       console.error('Error creating order:', error)
