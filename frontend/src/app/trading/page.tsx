@@ -6,6 +6,8 @@ import { parseEther, formatEther } from 'viem'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import Link from 'next/link'
 import { StarsBackground } from '@/components/animate-ui/backgrounds/stars'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import EthPriceChart from '@/components/EthPriceChart'
 
 // Contract addresses - will be set based on network
 let CROSSLINE_CORE_ADDRESS = '0x8B02e9416A0349A4934E0840485FA1Ed26FD21Ea' // Sepolia default
@@ -78,6 +80,7 @@ export default function Trading() {
   const [buyAmount, setBuyAmount] = useState('')
   const [loading, setLoading] = useState(false)
   const [ethPrice, setEthPrice] = useState<number>(2400) // Default ETH price in USD
+  const [priceHistory, setPriceHistory] = useState<Array<{time: string, price: number}>>([])
 
   const { writeContract } = useWriteContract()
   const { signTypedDataAsync } = useSignTypedData()
@@ -101,6 +104,27 @@ export default function Trading() {
 
   const contractAddresses = getContractAddresses()
 
+  // Read balances with refetch capability
+  const { data: wethBalance, refetch: refetchWethBalance } = useReadContract({
+    address: contractAddresses.weth,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address,
+    },
+  })
+
+  const { data: usdcBalance, refetch: refetchUsdcBalance } = useReadContract({
+    address: contractAddresses.usdc,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address,
+    },
+  })
+
   // Fetch ETH price from API
   useEffect(() => {
     const fetchEthPrice = async () => {
@@ -108,13 +132,28 @@ export default function Trading() {
         const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd')
         const data = await response.json()
         if (data.ethereum?.usd) {
-          setEthPrice(data.ethereum.usd)
+          const newPrice = data.ethereum.usd
+          setEthPrice(newPrice)
+          
+          // Add to price history (keep last 10 data points)
+          setPriceHistory(prev => {
+            const newEntry = {
+              time: new Date().toLocaleTimeString(),
+              price: newPrice
+            }
+            const updated = [...prev, newEntry].slice(-10)
+            return updated
+          })
         }
       } catch (error) {
         console.log('Using default ETH price:', ethPrice)
       }
     }
+    
     fetchEthPrice()
+    // Update price every 30 seconds
+    const interval = setInterval(fetchEthPrice, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   // Auto-calculate amounts when one changes
@@ -160,27 +199,6 @@ export default function Trading() {
       handleSellAmountChange(sellAmount)
     }
   }, [orderType, ethPrice])
-
-  // Read balances
-  const { data: wethBalance } = useReadContract({
-    address: contractAddresses.weth,
-    abi: ERC20_ABI,
-    functionName: 'balanceOf',
-    args: address ? [address] : undefined,
-    query: {
-      enabled: !!address,
-    },
-  })
-
-  const { data: usdcBalance } = useReadContract({
-    address: contractAddresses.usdc,
-    abi: ERC20_ABI,
-    functionName: 'balanceOf',
-    args: address ? [address] : undefined,
-    query: {
-      enabled: !!address,
-    },
-  })
 
   const handleCreateOrder = async () => {
     if (!isConnected || !address) return
@@ -262,9 +280,18 @@ export default function Trading() {
         if (response.ok) {
           const result = await response.json()
           console.log('Order created successfully:', result)
-          alert('Order created successfully!')
+          
+          // Show success message
+          alert(`🎉 Order created successfully!\n\nOrder ID: ${result.data?.orderHash || 'N/A'}\nType: ${orderType.toUpperCase()} ${orderType === 'buy' ? 'ETH' : 'ETH'}\nAmount: ${sellAmount} ${orderType === 'buy' ? 'USDC' : 'ETH'}`)
+          
+          // Reset form
           setSellAmount('')
           setBuyAmount('')
+          setLoading(false)
+          
+          // Refresh balances
+          refetchWethBalance()
+          refetchUsdcBalance()
         } else {
           const errorData = await response.json()
           console.error('Backend error:', errorData)
@@ -335,7 +362,14 @@ export default function Trading() {
             args: [address, parseEther('10000')], // Mint 10,000 USDC
           })
           
-          alert('🎉 Both tokens minted successfully! Wait 30 seconds then refresh to see balances.')
+          alert('🎉 Both tokens minted successfully! Balances will update in a few seconds.')
+          
+          // Refresh balances after a short delay
+          setTimeout(() => {
+            refetchWethBalance()
+            refetchUsdcBalance()
+          }, 5000)
+          
         } catch (error) {
           console.error('USDC minting error:', error)
           alert('WETH minted! USDC failed - try clicking the button again.')
@@ -354,7 +388,7 @@ export default function Trading() {
   if (!isConnected) {
     return (
       <StarsBackground className="min-h-screen flex items-center justify-center">
-        <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-12 border border-white/20 text-center">
+        <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-12 border-2 border-white/80 text-center">
           <h1 className="text-4xl font-bold text-white mb-6">Connect Wallet to Trade</h1>
           <ConnectButton />
         </div>
@@ -369,7 +403,7 @@ export default function Trading() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg"></div>
+              <img src="/crossline-logo.svg" alt="Crossline" className="w-8 h-8" />
               <span className="text-xl font-bold text-white">Crossline</span>
             </Link>
             <div className="flex items-center space-x-6">
@@ -383,9 +417,21 @@ export default function Trading() {
       </nav>
 
       <main className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-3xl sm:text-4xl font-bold text-white mb-6 sm:mb-8">Cross-Chain Trading</h1>
+        <div className="max-w-7xl mx-auto">
           
+          {/* Explanation Section */}
+          <div className="glass-card mb-8 p-6 rounded-2xl">
+            <h2 className="text-xl font-bold text-white mb-3">💡 Understanding WETH & USDC</h2>
+            <div className="text-gray-300 space-y-2">
+              <p><strong>Your Sepolia ETH:</strong> Used for gas fees (transaction costs)</p>
+              <p><strong>WETH (Wrapped ETH):</strong> ETH converted to tradeable token format</p>
+              <p><strong>USDC:</strong> Mock stablecoin for testing ($1 = 1 USDC)</p>
+              <p className="text-blue-400"><strong>This is how real DEXs work!</strong> Uniswap, 1inch, etc. all use WETH/USDC pairs.</p>
+            </div>
+          </div>
+
+          <h1 className="text-3xl sm:text-4xl font-bold text-white mb-6 sm:mb-8">Cross-Chain Trading</h1>
+
           {/* Network Warning */}
           {showNetworkWarning && (
             <div className="glass-card-prominent rounded-2xl p-6 mb-6 border-red-400/50">
@@ -403,13 +449,13 @@ export default function Trading() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 sm:gap-8">
             {/* Order Form */}
             <div className="glass-card-prominent rounded-2xl p-4 sm:p-6">
               <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-6">Create Limit Order</h2>
               
               {/* Order Type Toggle */}
-              <div className="flex bg-black/40 rounded-lg p-1 mb-4 sm:mb-6 border border-white/20">
+              <div className="flex bg-black/40 rounded-lg p-1 mb-4 sm:mb-6 border-2 border-white/70">
                 <button
                   onClick={() => setOrderType('buy')}
                   className={`flex-1 py-2 px-3 sm:px-4 rounded-md font-medium transition-colors text-sm sm:text-base ${
@@ -440,11 +486,10 @@ export default function Trading() {
                   </label>
                   <input
                     type="number"
+                    placeholder="0.0"
                     value={sellAmount}
                     onChange={(e) => handleSellAmountChange(e.target.value)}
-                    className="w-full bg-black/40 border-2 border-white/30 rounded-lg px-3 sm:px-4 py-2 sm:py-3 text-white placeholder-gray-400 focus:border-white/50 transition-colors text-sm sm:text-base"
-                    placeholder="0.0"
-                    step="any"
+                    className="w-full bg-black/40 border-2 border-white/70 rounded-lg px-3 sm:px-4 py-2 sm:py-3 text-white placeholder-gray-400 focus:border-white/90 transition-colors text-sm sm:text-base"
                   />
                 </div>
                 
@@ -464,9 +509,7 @@ export default function Trading() {
                     type="number"
                     value={buyAmount}
                     onChange={(e) => handleBuyAmountChange(e.target.value)}
-                    className="w-full bg-black/40 border-2 border-white/30 rounded-lg px-3 sm:px-4 py-2 sm:py-3 text-white placeholder-gray-400 focus:border-white/50 transition-colors text-sm sm:text-base"
-                    placeholder="0.0"
-                    step="any"
+                    className="w-full bg-black/40 border-2 border-white/70 rounded-lg px-3 sm:px-4 py-2 sm:py-3 text-white placeholder-gray-400 focus:border-white/90 transition-colors text-sm sm:text-base"
                   />
                 </div>
               </div>
@@ -480,11 +523,13 @@ export default function Trading() {
                   Approve {orderType === 'buy' ? 'USDC' : 'WETH'}
                 </button>
                 
+                {/* Get Test Tokens Button */}
                 <button
                   onClick={handleMintTokens}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 sm:py-3 px-4 rounded-lg transition-colors border border-green-400/50 text-sm sm:text-base"
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition-colors flex items-center justify-center space-x-2"
                 >
-                  🪙 Get Test Tokens (10 WETH + 10,000 USDC)
+                  <span>🎁</span>
+                  <span>Get Test Tokens (10 WETH + 10,000 USDC)</span>
                 </button>
                 
                 <button
@@ -541,6 +586,11 @@ export default function Trading() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* ETH Price Chart */}
+            <div className="glass-card-prominent rounded-2xl p-4 sm:p-6">
+              <EthPriceChart priceHistory={priceHistory} currentPrice={ethPrice} />
             </div>
           </div>
         </div>

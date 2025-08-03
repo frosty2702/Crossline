@@ -8,7 +8,8 @@ import Link from 'next/link'
 import { StarsBackground } from '@/components/animate-ui/backgrounds/stars'
 
 interface Order {
-  id: string
+  _id?: string
+  id?: string
   maker: string
   sellToken: string
   buyToken: string
@@ -32,10 +33,15 @@ export default function Orders() {
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch(`http://localhost:8080/api/orders?maker=${address}`)
+      console.log('Fetching orders for address:', address)
+      const response = await fetch(`http://localhost:8080/api/orders?maker=${address?.toLowerCase()}`)
       if (response.ok) {
         const data = await response.json()
-        setOrders(data.orders || [])
+        console.log('Orders API response:', data) // Debug log
+        console.log('Number of orders found:', data.data?.orders?.length || 0)
+        setOrders(data.data?.orders || [])
+      } else {
+        console.error('Failed to fetch orders:', response.status, response.statusText)
       }
     } catch (error) {
       console.error('Error fetching orders:', error)
@@ -65,9 +71,10 @@ export default function Orders() {
   }
 
   const getTokenSymbol = (address: string) => {
-    if (address.toLowerCase().includes('7b79995e5f793a07bc00c21412e50ecae098e7f9')) return 'WETH'
-    if (address.toLowerCase().includes('1c7d4b196cb0c7b01d743fbc6116a902379c7238')) return 'USDC'
-    return 'TOKEN'
+    const addr = address.toLowerCase()
+    if (addr === '0xa895e03b50672bb7e23e33875d9d3223a04074bf') return 'WETH' // Current mock WETH
+    if (addr === '0x54eccfc920a98f97cb2a3b375e6e4cd119e705bc') return 'USDC' // Current mock USDC
+    return address.slice(0, 6) + '...' + address.slice(-4) // Fallback to truncated address
   }
 
   const formatTimestamp = (timestamp: string) => {
@@ -96,7 +103,7 @@ export default function Orders() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg"></div>
+              <img src="/crossline-logo.svg" alt="Crossline" className="w-8 h-8" />
               <span className="text-xl font-bold text-white">Crossline</span>
             </Link>
             <div className="flex items-center space-x-6">
@@ -162,7 +169,7 @@ export default function Orders() {
                       const expired = isExpired(order.expiry)
                       
                       return (
-                        <tr key={order.id} className={index % 2 === 0 ? 'bg-black/10' : ''}>
+                        <tr key={order._id || order.id} className={index % 2 === 0 ? 'bg-black/10' : ''}>
                           <td className="py-4 px-6">
                             <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
                               sellSymbol === 'USDC' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
@@ -195,7 +202,7 @@ export default function Orders() {
                           <td className="py-4 px-6">
                             {order.status === 'active' && !expired && (
                               <button
-                                onClick={() => cancelOrder(order.id)}
+                                onClick={() => cancelOrder(order.id || order._id || '')}
                                 className="bg-red-600 hover:bg-red-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors"
                               >
                                 Cancel

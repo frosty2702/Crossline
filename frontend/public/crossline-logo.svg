@@ -1,0 +1,21 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background rounded square -->
+  <rect width="32" height="32" rx="8" fill="url(#gradient)"/>
+  
+  <!-- Cross arrows design -->
+  <g transform="translate(6, 6)">
+    <!-- Green arrow pointing up-right -->
+    <path d="M10 2L18 2L18 10M18 2L10 10" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    
+    <!-- Blue arrow pointing down-left -->
+    <path d="M10 20L2 20L2 12M2 20L10 12" stroke="#3B82F6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366F1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+</svg>

@@ -1,14 +1,67 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAccount } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import Link from 'next/link'
 import { StarsBackground } from '@/components/animate-ui/backgrounds/stars'
 
+interface Stats {
+  activeOrders: number
+  totalTrades: number
+  volumeTraded: string
+  gasSaved: string
+}
+
 export default function Home() {
   const { isConnected, address } = useAccount()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [stats, setStats] = useState<Stats>({
+    activeOrders: 0,
+    totalTrades: 0,
+    volumeTraded: '$0',
+    gasSaved: '100%'
+  })
+  const [loading, setLoading] = useState(true)
+
+  // Fetch real stats from backend
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        // Fetch overall system stats
+        const healthResponse = await fetch('http://localhost:8080/api/health')
+        if (healthResponse.ok) {
+          const healthData = await healthResponse.json()
+          
+          // Fetch user-specific orders if connected
+          let userActiveOrders = 0
+          if (isConnected && address) {
+            const ordersResponse = await fetch(`http://localhost:8080/api/orders?maker=${address.toLowerCase()}&status=active`)
+            if (ordersResponse.ok) {
+              const ordersData = await ordersResponse.json()
+              userActiveOrders = ordersData.data?.orders?.length || 0
+            }
+          }
+
+          setStats({
+            activeOrders: isConnected ? userActiveOrders : healthData.stats?.totalOrders || 0,
+            totalTrades: healthData.stats?.totalMatches || 0,
+            volumeTraded: '$0', // TODO: Calculate from matches
+            gasSaved: '100%'
+          })
+        }
+      } catch (error) {
+        console.error('Error fetching stats:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchStats()
+    // Refresh stats every 30 seconds
+    const interval = setInterval(fetchStats, 30000)
+    return () => clearInterval(interval)
+  }, [isConnected, address])
 
   if (!isConnected) {
     return (
@@ -38,7 +91,7 @@ export default function Home() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg"></div>
+              <img src="/crossline-logo.svg" alt="Crossline" className="w-8 h-8" />
               <span className="text-xl font-bold text-white">Crossline</span>
             </Link>
             
@@ -116,24 +169,25 @@ export default function Home() {
           </div>
 
           {/* Quick Actions */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            <Link href="/trading" className="group">
-              <div className="glass-card-prominent rounded-2xl p-4 sm:p-6 hover:border-white/50 transition-all duration-300">
-                <h3 className="text-lg sm:text-xl font-semibold text-white mb-2">🔄 Create Order</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
+            <Link href="/trading">
+              <div className="glass-card-prominent rounded-2xl p-4 sm:p-6 hover:border-white/90 transition-all duration-300">
+                <div className="text-2xl sm:text-3xl mb-2 sm:mb-3">📊</div>
+                <h3 className="text-lg sm:text-xl font-bold text-white mb-2">Create Order</h3>
                 <p className="text-gray-300 text-sm sm:text-base">Place gasless limit orders across chains</p>
               </div>
             </Link>
-
-            <Link href="/orders" className="group">
-              <div className="glass-card-prominent rounded-2xl p-4 sm:p-6 hover:border-white/50 transition-all duration-300">
-                <h3 className="text-lg sm:text-xl font-semibold text-white mb-2">📋 My Orders</h3>
+            <Link href="/orders">
+              <div className="glass-card-prominent rounded-2xl p-4 sm:p-6 hover:border-white/90 transition-all duration-300">
+                <div className="text-2xl sm:text-3xl mb-2 sm:mb-3">📋</div>
+                <h3 className="text-lg sm:text-xl font-bold text-white mb-2">My Orders</h3>
                 <p className="text-gray-300 text-sm sm:text-base">View and manage active orders</p>
               </div>
             </Link>
-
-            <Link href="/history" className="group sm:col-span-2 lg:col-span-1">
-              <div className="glass-card-prominent rounded-2xl p-4 sm:p-6 hover:border-white/50 transition-all duration-300">
-                <h3 className="text-lg sm:text-xl font-semibold text-white mb-2">📊 Trade History</h3>
+            <Link href="/history">
+              <div className="glass-card-prominent rounded-2xl p-4 sm:p-6 hover:border-white/90 transition-all duration-300">
+                <div className="text-2xl sm:text-3xl mb-2 sm:mb-3">📈</div>
+                <h3 className="text-lg sm:text-xl font-bold text-white mb-2">Trade History</h3>
                 <p className="text-gray-300 text-sm sm:text-base">View past trades and statistics</p>
               </div>
             </Link>
@@ -142,20 +196,46 @@ export default function Home() {
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <div className="glass-card-prominent rounded-xl p-3 sm:p-4">
-              <h4 className="text-xs sm:text-sm text-gray-400 mb-1">Active Orders</h4>
-              <p className="text-xl sm:text-2xl font-bold text-white">0</p>
+              <h4 className="text-xs sm:text-sm text-gray-400 mb-1">
+                {isConnected ? 'My Active Orders' : 'Total Active Orders'}
+              </h4>
+              {loading ? (
+                <div className="animate-pulse">
+                  <div className="h-6 sm:h-8 bg-gray-600 rounded w-8"></div>
+                </div>
+              ) : (
+                <p className="text-xl sm:text-2xl font-bold text-white">{stats.activeOrders}</p>
+              )}
             </div>
             <div className="glass-card-prominent rounded-xl p-3 sm:p-4">
               <h4 className="text-xs sm:text-sm text-gray-400 mb-1">Total Trades</h4>
-              <p className="text-xl sm:text-2xl font-bold text-white">0</p>
+              {loading ? (
+                <div className="animate-pulse">
+                  <div className="h-6 sm:h-8 bg-gray-600 rounded w-8"></div>
+                </div>
+              ) : (
+                <p className="text-xl sm:text-2xl font-bold text-white">{stats.totalTrades}</p>
+              )}
             </div>
             <div className="glass-card-prominent rounded-xl p-3 sm:p-4">
               <h4 className="text-xs sm:text-sm text-gray-400 mb-1">Volume Traded</h4>
-              <p className="text-xl sm:text-2xl font-bold text-white">$0</p>
+              {loading ? (
+                <div className="animate-pulse">
+                  <div className="h-6 sm:h-8 bg-gray-600 rounded w-12"></div>
+                </div>
+              ) : (
+                <p className="text-xl sm:text-2xl font-bold text-white">{stats.volumeTraded}</p>
+              )}
             </div>
             <div className="glass-card-prominent rounded-xl p-3 sm:p-4">
               <h4 className="text-xs sm:text-sm text-gray-400 mb-1">Gas Saved</h4>
-              <p className="text-xl sm:text-2xl font-bold text-green-400">100%</p>
+              {loading ? (
+                <div className="animate-pulse">
+                  <div className="h-6 sm:h-8 bg-gray-600 rounded w-16"></div>
+                </div>
+              ) : (
+                <p className="text-xl sm:text-2xl font-bold text-green-400">{stats.gasSaved}</p>
+              )}
             </div>
           </div>
 

@@ -32,10 +32,14 @@ export default function History() {
 
   const fetchTrades = async () => {
     try {
-      const response = await fetch(`http://localhost:8080/api/trades?user=${address}`)
+      console.log('Fetching trade history for address:', address)
+      const response = await fetch(`http://localhost:8080/api/trades?user=${address?.toLowerCase()}`)
       if (response.ok) {
         const data = await response.json()
-        setTrades(data.trades || [])
+        console.log('Trades API response:', data)
+        setTrades(data.data?.trades || [])
+      } else {
+        console.error('Failed to fetch trades:', response.status, response.statusText)
       }
     } catch (error) {
       console.error('Error fetching trades:', error)
@@ -45,9 +49,10 @@ export default function History() {
   }
 
   const getTokenSymbol = (address: string) => {
-    if (address.toLowerCase().includes('7b79995e5f793a07bc00c21412e50ecae098e7f9')) return 'WETH'
-    if (address.toLowerCase().includes('1c7d4b196cb0c7b01d743fbc6116a902379c7238')) return 'USDC'
-    return 'TOKEN'
+    const addr = address.toLowerCase()
+    if (addr === '0xa895e03b50672bb7e23e33875d9d3223a04074bf') return 'WETH' // Current mock WETH
+    if (addr === '0x54eccfc920a98f97cb2a3b375e6e4cd119e705bc') return 'USDC' // Current mock USDC
+    return address.slice(0, 6) + '...' + address.slice(-4) // Fallback to truncated address
   }
 
   const formatTimestamp = (timestamp: string) => {
@@ -89,7 +94,7 @@ export default function History() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg"></div>
+              <img src="/crossline-logo.svg" alt="Crossline" className="w-8 h-8" />
               <span className="text-xl font-bold text-white">Crossline</span>
             </Link>
             <div className="flex items-center space-x-6">
