@@ -1,11 +1,12 @@
 const express = require('express');
-const mongoose = require('mongoose');
-const { db } = require('../config/database');
+const { getConnectionStatus, healthCheck } = require('../config/database');
+const Order = require('../models/Order');
 const Match = require('../models/Match');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
-// GET /api/health - Basic health check
+// GET /api/health - Comprehensive health check
 router.get('/', async (req, res) => {
   try {
     const health = {
@@ -13,135 +14,136 @@ router.get('/', async (req, res) => {
       timestamp: new Date(),
       uptime: process.uptime(),
       environment: process.env.NODE_ENV || 'development',
-      version: '1.0.0'
+      version: '1.0.0',
+      service: 'crossline-backend'
     };
 
-    // Check database connection (demo mode)
-    if (db.isConnected()) {
-      health.database = 'connected (demo mode)';
-    } else {
-      health.database = 'disconnected';
-      health.status = 'error';
+    // Check database connection
+    const dbStatus = getConnectionStatus();
+    const dbHealth = await healthCheck();
+    
+    health.database = {
+      status: dbHealth.status,
+      connected: dbStatus.isConnected,
+      host: dbStatus.host,
+      port: dbStatus.port,
+      name: dbStatus.name,
+      readyState: dbStatus.readyState
+    };
+
+    if (dbHealth.status !== 'healthy') {
+      health.status = 'degraded';
+      health.database.error = dbHealth.error;
     }
 
-    // Check basic functionality (demo mode)
+    // Get database statistics
     try {
-      const orderCount = db.orders.size;
-      const matchCount = 0; // No matches stored in demo mode
-      
+      if (dbStatus.isConnected) {
+        const [totalOrders, activeOrders, totalMatches] = await Promise.all([
+          Order.countDocuments(),
+          Order.countDocuments({ status: 'active', expiry: { $gt: new Date() } }),
+          Match.countDocuments()
+        ]);
+        
+        health.stats = {
+          totalOrders,
+          activeOrders,
+          totalMatches,
+          lastCheck: new Date()
+        };
+      } else {
+        health.stats = {
+          totalOrders: 0,
+          activeOrders: 0,
+          totalMatches: 0,
+          note: 'Database not connected'
+        };
+      }
+    } catch (statsError) {
+      logger.warn('Failed to fetch database stats:', statsError.message);
       health.stats = {
-        totalOrders: orderCount,
-        totalMatches: matchCount
+        error: 'Failed to fetch statistics',
+        totalOrders: 0,
+        activeOrders: 0,
+        totalMatches: 0
       };
-    } catch (dbError) {
-      health.database = 'error';
-      health.status = 'error';
-      health.error = dbError.message;
     }
 
-    const statusCode = health.status === 'ok' ? 200 : 503;
-    res.status(statusCode).json(health);
+    // Memory usage
+    const memUsage = process.memoryUsage();
+    health.memory = {
+      rss: Math.round(memUsage.rss / 1024 / 1024) + 'MB',
+      heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024) + 'MB',
+      heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024) + 'MB',
+      external: Math.round(memUsage.external / 1024 / 1024) + 'MB'
+    };
+
+    // API endpoints status
+    health.endpoints = {
+      orders: 'operational',
+      orderbook: 'operational',
+      trades: 'operational',
+      health: 'operational'
+    };
+
+    const httpStatus = health.status === 'ok' ? 200 : 
+                      health.status === 'degraded' ? 200 : 500;
+
+    res.status(httpStatus).json(health);
 
   } catch (error) {
-    res.status(503).json({
+    logger.error('Health check error:', error);
+    res.status(500).json({
       status: 'error',
       timestamp: new Date(),
+      message: 'Health check failed',
       error: error.message
     });
   }
 });
 
-// GET /api/health/detailed - Detailed system status
-router.get('/detailed', async (req, res) => {
+// GET /api/health/database - Detailed database health
+router.get('/database', async (req, res) => {
   try {
-    const detailed = {
-      status: 'ok',
-      timestamp: new Date(),
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      environment: process.env.NODE_ENV || 'development'
+    const dbStatus = getConnectionStatus();
+    const dbHealth = await healthCheck();
+    
+    const response = {
+      ...dbStatus,
+      health: dbHealth,
+      collections: {}
     };
 
-    // Database health
-    detailed.database = {
-      status: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
-      host: mongoose.connection.host,
-      name: mongoose.connection.name
-    };
-
-    // System stats
-    try {
-      const [
-        totalOrders,
-        openOrders,
-        filledOrders,
-        totalMatches,
-        pendingMatches,
-        executedMatches
-      ] = await Promise.all([
-        Order.countDocuments(),
-        Order.countDocuments({ orderStatus: 'open' }),
-        Order.countDocuments({ orderStatus: 'filled' }),
-        Match.countDocuments(),
-        Match.countDocuments({ matchStatus: 'pending' }),
-        Match.countDocuments({ matchStatus: 'executed' })
-      ]);
-
-      detailed.statistics = {
-        orders: {
-          total: totalOrders,
-          open: openOrders,
-          filled: filledOrders
-        },
-        matches: {
-          total: totalMatches,
-          pending: pendingMatches,
-          executed: executedMatches
-        }
-      };
-
-      // Active trading pairs
-      const activePairs = await Order.distinct('tokenPair', {
-        orderStatus: 'open',
-        expiry: { $gt: new Date() }
-      });
-
-      detailed.statistics.activePairs = activePairs.length;
-
-    } catch (statsError) {
-      detailed.statistics = { error: statsError.message };
-      detailed.status = 'degraded';
+    if (dbStatus.isConnected) {
+      try {
+        // Get collection stats
+        const orderStats = await Order.collection.stats();
+        const matchStats = await Match.collection.stats();
+        
+        response.collections = {
+          orders: {
+            count: orderStats.count,
+            size: orderStats.size,
+            avgObjSize: orderStats.avgObjSize
+          },
+          matches: {
+            count: matchStats.count,
+            size: matchStats.size,
+            avgObjSize: matchStats.avgObjSize
+          }
+        };
+      } catch (collectionError) {
+        response.collections = { error: collectionError.message };
+      }
     }
 
-    // Recent activity
-    try {
-      const recentOrders = await Order.countDocuments({
-        createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } // Last 24 hours
-      });
-
-      const recentMatches = await Match.countDocuments({
-        matchedAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-      });
-
-      detailed.activity = {
-        last24h: {
-          orders: recentOrders,
-          matches: recentMatches
-        }
-      };
-
-    } catch (activityError) {
-      detailed.activity = { error: activityError.message };
-    }
-
-    const statusCode = detailed.status === 'ok' ? 200 : 503;
-    res.status(statusCode).json(detailed);
+    res.json(response);
 
   } catch (error) {
-    res.status(503).json({
-      status: 'error',
-      timestamp: new Date(),
-      error: error.message
+    logger.error('Database health check error:', error);
+    res.status(500).json({
+      error: 'Database health check failed',
+      message: error.message
     });
   }
 });

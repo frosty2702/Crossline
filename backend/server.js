@@ -10,7 +10,7 @@ require('dotenv').config();
 
 const logger = require('./utils/logger');
 const { connectDB } = require('./config/database');
-const { startMatchingEngine } = require('./services/matchingEngine');
+const MatchingEngine = require('./services/matchingEngine');
 
 // Import routes
 const orderRoutes = require('./routes/orders');
@@ -27,6 +27,9 @@ const io = new Server(server, {
   }
 });
 
+// Initialize matching engine
+let matchingEngine = null;
+
 // Middleware
 app.use(helmet());
 app.use(compression());
@@ -39,9 +42,10 @@ const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
   max: parseInt(process.env.RATE_LIMIT_MAX) || 100 // limit each IP to 100 requests per windowMs
 });
+
 app.use(limiter);
 
-// Make io available to routes
+// Store io instance for use in routes
 app.set('io', io);
 
 // Routes
@@ -50,32 +54,36 @@ app.use('/api/orderbook', orderbookRoutes);
 app.use('/api/trades', tradeRoutes);
 app.use('/api/health', healthRoutes);
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  logger.error('Error:', err);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+// Root route
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Crossline Backend API',
+    version: '1.0.0',
+    status: 'running',
+    timestamp: new Date(),
+    endpoints: {
+      health: '/api/health',
+      orders: '/api/orders',
+      orderbook: '/api/orderbook',
+      trades: '/api/trades'
+    }
   });
-});
-
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({ error: 'Route not found' });
 });
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
   logger.info(`Client connected: ${socket.id}`);
   
-  socket.on('subscribe-orderbook', (tokenPair) => {
+  // Join orderbook room
+  socket.on('join-orderbook', (tokenPair) => {
     socket.join(`orderbook:${tokenPair}`);
-    logger.info(`Client ${socket.id} subscribed to orderbook:${tokenPair}`);
+    logger.debug(`Client ${socket.id} joined orderbook: ${tokenPair}`);
   });
   
-  socket.on('subscribe-trades', (userAddress) => {
+  // Join trades room
+  socket.on('join-trades', (userAddress) => {
     socket.join(`trades:${userAddress}`);
-    logger.info(`Client ${socket.id} subscribed to trades:${userAddress}`);
+    logger.debug(`Client ${socket.id} joined trades: ${userAddress}`);
   });
   
   socket.on('disconnect', () => {
@@ -91,8 +99,9 @@ async function startServer() {
     // Connect to database
     await connectDB();
     
-    // Start matching engine
-    await startMatchingEngine(io);
+    // Initialize and start matching engine
+    matchingEngine = new MatchingEngine(io);
+    await matchingEngine.start();
     
     // Start HTTP server
     server.listen(PORT, () => {
@@ -109,6 +118,26 @@ async function startServer() {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
+  
+  // Stop matching engine
+  if (matchingEngine) {
+    matchingEngine.stop();
+  }
+  
+  server.close(() => {
+    mongoose.connection.close();
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received, shutting down gracefully');
+  
+  // Stop matching engine
+  if (matchingEngine) {
+    matchingEngine.stop();
+  }
+  
   server.close(() => {
     mongoose.connection.close();
     process.exit(0);

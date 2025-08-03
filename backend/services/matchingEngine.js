@@ -1,14 +1,22 @@
 const cron = require('node-cron');
-// For demo mode, we'll use in-memory storage instead of MongoDB models
-const { db } = require('../config/database');
+const Order = require('../models/Order');
+const Match = require('../models/Match');
+const { getStorage, useInMemory } = require('../config/database');
 const logger = require('../utils/logger');
 const { executeMatch } = require('./tradeExecutor');
 
 class MatchingEngine {
   constructor(io) {
     this.io = io;
+    this.matchingInterval = process.env.MATCHING_INTERVAL_SECONDS || 5; // Every 5 seconds for production
+    this.cronJob = null;
     this.isRunning = false;
-    this.matchingInterval = null;
+    this.matchingStats = {
+      totalMatches: 0,
+      totalVolume: '0',
+      lastMatchTime: null,
+      cyclesRun: 0
+    };
   }
 
   /**
@@ -16,25 +24,27 @@ class MatchingEngine {
    */
   async start() {
     if (this.isRunning) {
-      logger.warn('Matching engine is already running');
+      logger.warn('⚠️ Matching engine already running');
       return;
     }
 
+    logger.info('🚀 Starting Crossline Production Matching Engine');
     this.isRunning = true;
-    logger.info('🔄 Starting Crossline Matching Engine');
 
-    // Run matching every 10 seconds
+    // Run matching every interval
     this.matchingInterval = setInterval(() => {
       this.runMatchingCycle().catch(error => {
-        logger.error('Error in matching cycle:', error);
+        logger.error('❌ Error in matching cycle:', error);
       });
-    }, 10000);
+    }, this.matchingInterval * 1000);
 
-    // Also schedule cleanup tasks
+    // Schedule cleanup tasks
     this.scheduleCleanupTasks();
 
     // Run initial matching cycle
     await this.runMatchingCycle();
+    
+    logger.info(`✅ Production matching engine started (${this.matchingInterval}s intervals)`);
   }
 
   /**
@@ -45,6 +55,12 @@ class MatchingEngine {
       clearInterval(this.matchingInterval);
       this.matchingInterval = null;
     }
+    
+    if (this.cronJob) {
+      this.cronJob.destroy();
+      this.cronJob = null;
+    }
+    
     this.isRunning = false;
     logger.info('🛑 Matching engine stopped');
   }
@@ -54,297 +70,327 @@ class MatchingEngine {
    */
   async runMatchingCycle() {
     try {
-      logger.debug('Running matching cycle...');
+      const startTime = Date.now();
+      logger.debug('🔄 Running production matching cycle...');
+      this.matchingStats.cyclesRun++;
 
-      // For demo mode, just log that matching is running
-      logger.info('Matching engine running in demo mode - no active orders to process');
       let totalMatches = 0;
+      const storage = getStorage();
 
+      if (storage.type === 'in-memory') {
+        totalMatches = await this.matchOrdersInMemory(storage);
+      } else {
+        totalMatches = await this.matchOrdersMongoDB();
+      }
+
+      const duration = Date.now() - startTime;
+      
       if (totalMatches > 0) {
-        logger.info(`✅ Matching cycle completed: ${totalMatches} matches found`);
+        this.matchingStats.totalMatches += totalMatches;
+        this.matchingStats.lastMatchTime = new Date();
+        
+        logger.info(`🎉 Matching cycle completed: ${totalMatches} matches found in ${duration}ms`);
+        
+        // Emit real-time update
+        this.io.emit('matching-update', {
+          type: 'matches-found',
+          data: {
+            matches: totalMatches,
+            duration,
+            timestamp: new Date()
+          }
+        });
+      } else {
+        logger.debug(`✅ Matching cycle completed: No matches found (${duration}ms)`);
       }
 
     } catch (error) {
-      logger.error('Error in matching cycle:', error);
+      logger.error('❌ Error in matching cycle:', error);
     }
   }
 
   /**
-   * Find matches for a specific token pair
-   * @param {string} tokenPair - Token pair to match (e.g., "WETH-USDC")
+   * Match orders using in-memory storage
    */
-  async findMatchesForPair(tokenPair) {
-    try {
-      // Get open buy orders (highest price first)
-      const buyOrders = await Order.find({
-        tokenPair,
-        orderType: 'buy',
-        orderStatus: 'open',
-        expiry: { $gt: new Date() }
-      }).sort({ price: -1, createdAt: 1 }); // Price-time priority
+  async matchOrdersInMemory(storage) {
+    const orders = Array.from(storage.orders.values());
+    const activeOrders = orders.filter(order => 
+      order.status === 'active' && 
+      new Date(order.expiry) > new Date()
+    );
 
-      // Get open sell orders (lowest price first)
-      const sellOrders = await Order.find({
-        tokenPair,
-        orderType: 'sell',
-        orderStatus: 'open',
-        expiry: { $gt: new Date() }
-      }).sort({ price: 1, createdAt: 1 }); // Price-time priority
+    if (activeOrders.length < 2) {
+      return 0;
+    }
 
-      if (buyOrders.length === 0 || sellOrders.length === 0) {
-        return 0;
+    let totalMatches = 0;
+    const processedOrders = new Set();
+
+    // Group orders by token pairs
+    const ordersByPair = this.groupOrdersByTokenPair(activeOrders);
+
+    for (const [tokenPair, pairOrders] of Object.entries(ordersByPair)) {
+      const matches = await this.findMatchesForPair(pairOrders);
+      
+      for (const match of matches) {
+        if (!processedOrders.has(match.buyOrder.id) && !processedOrders.has(match.sellOrder.id)) {
+          await this.processMatch(match, storage);
+          processedOrders.add(match.buyOrder.id);
+          processedOrders.add(match.sellOrder.id);
+          totalMatches++;
+        }
       }
+    }
 
-      let matchCount = 0;
+    return totalMatches;
+  }
 
-      // Try to match orders
-      for (const buyOrder of buyOrders) {
-        for (const sellOrder of sellOrders) {
-          // Check if orders can be matched
-          if (this.canMatch(buyOrder, sellOrder)) {
-            await this.createMatch(buyOrder, sellOrder);
-            matchCount++;
+  /**
+   * Match orders using MongoDB
+   */
+  async matchOrdersMongoDB() {
+    // Get all active token pairs
+    const tokenPairs = await Order.distinct('tokenPair', {
+      status: 'active',
+      expiry: { $gt: new Date() }
+    });
+
+    let totalMatches = 0;
+
+    for (const tokenPair of tokenPairs) {
+      const orders = await Order.find({
+        tokenPair,
+        status: 'active',
+        expiry: { $gt: new Date() }
+      }).sort({ createdAt: 1 });
+
+      if (orders.length < 2) continue;
+
+      const matches = await this.findMatchesForPair(orders);
+      
+      for (const match of matches) {
+        await this.processMatchMongoDB(match);
+        totalMatches++;
+      }
+    }
+
+    return totalMatches;
+  }
+
+  /**
+   * Group orders by token pair for efficient matching
+   */
+  groupOrdersByTokenPair(orders) {
+    const grouped = {};
+    
+    for (const order of orders) {
+      const pair = order.tokenPair || `${order.sellToken}/${order.buyToken}`;
+      if (!grouped[pair]) {
+        grouped[pair] = [];
+      }
+      grouped[pair].push(order);
+    }
+    
+    return grouped;
+  }
+
+  /**
+   * Find compatible matches for a token pair
+   */
+  async findMatchesForPair(orders) {
+    const matches = [];
+    
+    // Separate buy and sell orders
+    const buyOrders = [];
+    const sellOrders = [];
+    
+    for (const order of orders) {
+      // Determine if this is a buy or sell based on token addresses
+      const isBuyOrder = this.isBuyOrder(order);
+      if (isBuyOrder) {
+        buyOrders.push(order);
+      } else {
+        sellOrders.push(order);
+      }
+    }
+
+    // Sort orders for optimal matching
+    buyOrders.sort((a, b) => parseFloat(b.price) - parseFloat(a.price)); // Highest price first
+    sellOrders.sort((a, b) => parseFloat(a.price) - parseFloat(b.price)); // Lowest price first
+
+    // Find matches
+    for (const buyOrder of buyOrders) {
+      for (const sellOrder of sellOrders) {
+        if (this.canMatch(buyOrder, sellOrder)) {
+          const matchedAmount = this.calculateMatchedAmount(buyOrder, sellOrder);
+          
+          if (BigInt(matchedAmount) > 0) {
+            matches.push({
+              buyOrder,
+              sellOrder,
+              matchedAmount,
+              price: sellOrder.price, // Execute at sell order price
+              timestamp: new Date()
+            });
             
-            // Break if buy order is fully filled
-            if (buyOrder.orderStatus === 'filled') {
-              break;
-            }
+            // Update remaining amounts (for this cycle)
+            buyOrder.remainingAmount = (BigInt(buyOrder.remainingAmount || buyOrder.sellAmount) - BigInt(matchedAmount)).toString();
+            sellOrder.remainingAmount = (BigInt(sellOrder.remainingAmount || sellOrder.sellAmount) - BigInt(matchedAmount)).toString();
+            
+            // If order is fully filled, don't match it again
+            if (BigInt(buyOrder.remainingAmount) <= 0) break;
           }
         }
       }
-
-      return matchCount;
-
-    } catch (error) {
-      logger.error(`Error finding matches for ${tokenPair}:`, error);
-      return 0;
     }
+
+    return matches;
+  }
+
+  /**
+   * Determine if an order is a buy order
+   */
+  isBuyOrder(order) {
+    // If selling USDC/stablecoin for ETH/WETH, it's a buy order
+    const stablecoins = ['USDC', 'USDT', 'DAI'];
+    const sellTokenSymbol = this.getTokenSymbol(order.sellToken);
+    const buyTokenSymbol = this.getTokenSymbol(order.buyToken);
+    
+    return stablecoins.includes(sellTokenSymbol) && !stablecoins.includes(buyTokenSymbol);
+  }
+
+  /**
+   * Get token symbol from address (simplified)
+   */
+  getTokenSymbol(address) {
+    const tokenMap = {
+      '0x54EcCfc920a98f97cb2a3b375e6e4cd119e705bC': 'USDC',
+      '0xA895E03B50672Bb7e23e33875D9d3223A04074BF': 'WETH',
+      '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238': 'USDC',
+      '0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14': 'WETH'
+    };
+    return tokenMap[address] || 'UNKNOWN';
   }
 
   /**
    * Check if two orders can be matched
-   * @param {Object} buyOrder - Buy order
-   * @param {Object} sellOrder - Sell order
    */
   canMatch(buyOrder, sellOrder) {
-    // Basic checks
-    if (buyOrder.userAddress === sellOrder.userAddress) {
-      return false; // Can't match with self
-    }
-
-    if (buyOrder.tokenPair !== sellOrder.tokenPair) {
-      return false; // Different pairs
-    }
-
-    if (!buyOrder.canBeMatched() || !sellOrder.canBeMatched()) {
-      return false; // Orders not matchable
-    }
-
-    // Price check: buy price >= sell price
-    return buyOrder.price >= sellOrder.price;
+    // Basic compatibility checks
+    if (buyOrder.id === sellOrder.id) return false;
+    if (buyOrder.maker.toLowerCase() === sellOrder.maker.toLowerCase()) return false;
+    
+    // Token compatibility (buy order's buyToken should match sell order's sellToken)
+    if (buyOrder.buyToken.toLowerCase() !== sellOrder.sellToken.toLowerCase()) return false;
+    if (buyOrder.sellToken.toLowerCase() !== sellOrder.buyToken.toLowerCase()) return false;
+    
+    // Price compatibility (buy price >= sell price)
+    return parseFloat(buyOrder.price) >= parseFloat(sellOrder.price);
   }
 
   /**
-   * Create a match between two orders
-   * @param {Object} buyOrder - Buy order
-   * @param {Object} sellOrder - Sell order
+   * Calculate the matched amount between two orders
    */
-  async createMatch(buyOrder, sellOrder) {
+  calculateMatchedAmount(buyOrder, sellOrder) {
+    const buyRemaining = BigInt(buyOrder.remainingAmount || buyOrder.sellAmount);
+    const sellRemaining = BigInt(sellOrder.remainingAmount || sellOrder.sellAmount);
+    
+    // Match the minimum of what's available
+    return buyRemaining < sellRemaining ? buyRemaining.toString() : sellRemaining.toString();
+  }
+
+  /**
+   * Process a match in in-memory storage
+   */
+  async processMatch(match, storage) {
     try {
-      // Calculate match details
-      const matchDetails = this.calculateMatchDetails(buyOrder, sellOrder);
+      // Update order statuses
+      const buyOrder = storage.orders.get(match.buyOrder.id);
+      const sellOrder = storage.orders.get(match.sellOrder.id);
+      
+      if (!buyOrder || !sellOrder) return;
+
+      // Update filled amounts
+      buyOrder.filledAmount = (BigInt(buyOrder.filledAmount || '0') + BigInt(match.matchedAmount)).toString();
+      sellOrder.filledAmount = (BigInt(sellOrder.filledAmount || '0') + BigInt(match.matchedAmount)).toString();
+      
+      // Update remaining amounts
+      buyOrder.remainingAmount = (BigInt(buyOrder.sellAmount) - BigInt(buyOrder.filledAmount)).toString();
+      sellOrder.remainingAmount = (BigInt(sellOrder.sellAmount) - BigInt(sellOrder.filledAmount)).toString();
+      
+      // Check if orders are fully filled
+      if (BigInt(buyOrder.remainingAmount) <= 0) {
+        buyOrder.status = 'filled';
+        buyOrder.executedAt = new Date().toISOString();
+      }
+      
+      if (BigInt(sellOrder.remainingAmount) <= 0) {
+        sellOrder.status = 'filled';
+        sellOrder.executedAt = new Date().toISOString();
+      }
+
+      // Store the match
+      const matchId = `match_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      storage.matches.set(matchId, {
+        id: matchId,
+        buyOrderId: match.buyOrder.id,
+        sellOrderId: match.sellOrder.id,
+        buyOrderMaker: match.buyOrder.maker,
+        sellOrderMaker: match.sellOrder.maker,
+        matchedAmount: match.matchedAmount,
+        price: match.price,
+        sellToken: match.sellOrder.sellToken,
+        buyToken: match.sellOrder.buyToken,
+        executedAt: match.timestamp,
+        status: 'completed'
+      });
+
+      logger.info(`✅ Match processed: ${match.matchedAmount} tokens between ${buyOrder.maker} and ${sellOrder.maker}`);
+
+      // Emit real-time updates
+      this.io.emit('order-updated', { type: 'order-filled', data: buyOrder });
+      this.io.emit('order-updated', { type: 'order-filled', data: sellOrder });
+      this.io.emit('match-executed', { type: 'match-executed', data: storage.matches.get(matchId) });
+
+    } catch (error) {
+      logger.error('❌ Error processing match:', error);
+    }
+  }
+
+  /**
+   * Process a match in MongoDB
+   */
+  async processMatchMongoDB(match) {
+    try {
+      // Update orders
+      await match.buyOrder.fill(match.matchedAmount);
+      await match.sellOrder.fill(match.matchedAmount);
 
       // Create match record
-      const match = new Match({
-        buyOrderId: buyOrder._id,
-        sellOrderId: sellOrder._id,
-        tokenPair: buyOrder.tokenPair,
-        matchedPrice: matchDetails.price,
-        matchedAmount: matchDetails.amount,
-        buyAmount: matchDetails.buyAmount,
-        buyerAddress: buyOrder.userAddress,
-        sellerAddress: sellOrder.userAddress,
-        executionChain: this.selectExecutionChain(buyOrder, sellOrder),
-        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes to execute
-        crossChainDetails: this.getCrossChainDetails(buyOrder, sellOrder)
+      const matchRecord = new Match({
+        buyOrderId: match.buyOrder._id,
+        sellOrderId: match.sellOrder._id,
+        buyOrderMaker: match.buyOrder.maker,
+        sellOrderMaker: match.sellOrder.maker,
+        matchedAmount: match.matchedAmount,
+        price: match.price,
+        sellToken: match.sellOrder.sellToken,
+        buyToken: match.sellOrder.buyToken,
+        executedAt: match.timestamp,
+        status: 'completed'
       });
 
-      await match.save();
+      await matchRecord.save();
 
-      // Update order statuses
-      await this.updateOrdersAfterMatch(buyOrder, sellOrder, matchDetails);
+      logger.info(`✅ Match processed: ${match.matchedAmount} tokens between ${match.buyOrder.maker} and ${match.sellOrder.maker}`);
 
-      // Emit real-time events
-      this.emitMatchEvents(match, buyOrder, sellOrder);
-
-      // Queue for execution
-      await this.queueForExecution(match);
-
-      logger.info(`💰 Match created: ${match._id} for ${buyOrder.tokenPair} at price ${matchDetails.price}`);
+      // Emit real-time updates
+      this.io.emit('order-updated', { type: 'order-filled', data: match.buyOrder });
+      this.io.emit('order-updated', { type: 'order-filled', data: match.sellOrder });
+      this.io.emit('match-executed', { type: 'match-executed', data: matchRecord });
 
     } catch (error) {
-      logger.error('Error creating match:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Calculate match details (price, amount, etc.)
-   * @param {Object} buyOrder - Buy order
-   * @param {Object} sellOrder - Sell order
-   */
-  calculateMatchDetails(buyOrder, sellOrder) {
-    // Use sell order price (maker price)
-    const price = sellOrder.price;
-    
-    // Calculate maximum matchable amount
-    const buyRemaining = BigInt(buyOrder.remainingAmount);
-    const sellRemaining = BigInt(sellOrder.remainingAmount);
-    
-    // Amount is limited by both orders
-    const matchedAmount = buyRemaining < sellRemaining ? buyRemaining : sellRemaining;
-    
-    // Calculate buy amount based on matched sell amount and price
-    const buyAmount = (BigInt(matchedAmount) * BigInt(Math.floor(price * 1e18))) / BigInt(1e18);
-
-    return {
-      price,
-      amount: matchedAmount.toString(),
-      buyAmount: buyAmount.toString()
-    };
-  }
-
-  /**
-   * Update order statuses after a match
-   */
-  async updateOrdersAfterMatch(buyOrder, sellOrder, matchDetails) {
-    const matchedAmount = BigInt(matchDetails.amount);
-
-    // Update buy order
-    const buyRemaining = BigInt(buyOrder.remainingAmount) - matchedAmount;
-    buyOrder.remainingAmount = buyRemaining.toString();
-    buyOrder.filledAmount = (BigInt(buyOrder.filledAmount) + matchedAmount).toString();
-    
-    if (buyRemaining === 0n) {
-      buyOrder.orderStatus = 'filled';
-    } else {
-      buyOrder.orderStatus = 'partially_filled';
-    }
-
-    buyOrder.matchedWith.push({
-      orderId: sellOrder._id,
-      matchedAmount: matchDetails.amount,
-      matchedAt: new Date()
-    });
-
-    await buyOrder.save();
-
-    // Update sell order
-    const sellRemaining = BigInt(sellOrder.remainingAmount) - matchedAmount;
-    sellOrder.remainingAmount = sellRemaining.toString();
-    sellOrder.filledAmount = (BigInt(sellOrder.filledAmount) + matchedAmount).toString();
-    
-    if (sellRemaining === 0n) {
-      sellOrder.orderStatus = 'filled';
-    } else {
-      sellOrder.orderStatus = 'partially_filled';
-    }
-
-    sellOrder.matchedWith.push({
-      orderId: buyOrder._id,
-      matchedAmount: matchDetails.amount,
-      matchedAt: new Date()
-    });
-
-    await sellOrder.save();
-  }
-
-  /**
-   * Select execution chain for the match
-   */
-  selectExecutionChain(buyOrder, sellOrder) {
-    // If both orders are on same chain, execute there
-    if (buyOrder.sourceChain === sellOrder.sourceChain) {
-      return buyOrder.sourceChain;
-    }
-
-    // Otherwise, use target chain or default to ethereum
-    return buyOrder.targetChain || sellOrder.targetChain || 'ethereum';
-  }
-
-  /**
-   * Get cross-chain details if applicable
-   */
-  getCrossChainDetails(buyOrder, sellOrder) {
-    if (buyOrder.sourceChain !== sellOrder.sourceChain ||
-        buyOrder.targetChain !== sellOrder.targetChain) {
-      return {
-        sourceChain: buyOrder.sourceChain,
-        targetChain: sellOrder.sourceChain,
-        bridgeStatus: 'pending'
-      };
-    }
-    return null;
-  }
-
-  /**
-   * Emit real-time events for matches
-   */
-  emitMatchEvents(match, buyOrder, sellOrder) {
-    // Emit to orderbook subscribers
-    this.io.to(`orderbook:${match.tokenPair}`).emit('match-found', {
-      type: 'match-found',
-      data: {
-        matchId: match._id,
-        tokenPair: match.tokenPair,
-        price: match.matchedPrice,
-        amount: match.matchedAmount,
-        timestamp: match.matchedAt
-      }
-    });
-
-    // Emit to user subscribers
-    this.io.to(`trades:${buyOrder.userAddress}`).emit('order-matched', {
-      type: 'order-matched',
-      data: {
-        orderId: buyOrder._id,
-        matchId: match._id,
-        side: 'buy'
-      }
-    });
-
-    this.io.to(`trades:${sellOrder.userAddress}`).emit('order-matched', {
-      type: 'order-matched',
-      data: {
-        orderId: sellOrder._id,
-        matchId: match._id,
-        side: 'sell'
-      }
-    });
-  }
-
-  /**
-   * Queue match for execution
-   */
-  async queueForExecution(match) {
-    try {
-      // Mark as verified (basic verification passed)
-      match.matchStatus = 'verified';
-      await match.save();
-
-      // Execute immediately for demo purposes
-      // In production, this would go through a proper queue
-      setImmediate(async () => {
-        try {
-          await executeMatch(match);
-        } catch (error) {
-          logger.error(`Error executing match ${match._id}:`, error);
-          await match.markAsFailed(error.message);
-        }
-      });
-
-    } catch (error) {
-      logger.error('Error queuing match for execution:', error);
+      logger.error('❌ Error processing MongoDB match:', error);
     }
   }
 
@@ -352,68 +398,64 @@ class MatchingEngine {
    * Schedule cleanup tasks
    */
   scheduleCleanupTasks() {
-    // Clean expired orders every hour
-    cron.schedule('0 * * * *', async () => {
+    // Clean up expired orders every hour
+    this.cronJob = cron.schedule('0 * * * *', async () => {
       try {
-        const expiredCount = await Order.updateMany(
-          {
-            orderStatus: 'open',
-            expiry: { $lt: new Date() }
-          },
-          {
-            orderStatus: 'expired'
-          }
-        );
-
-        if (expiredCount.modifiedCount > 0) {
-          logger.info(`🧹 Cleaned up ${expiredCount.modifiedCount} expired orders`);
-        }
+        await this.cleanupExpiredOrders();
       } catch (error) {
-        logger.error('Error cleaning expired orders:', error);
+        logger.error('❌ Error in cleanup task:', error);
       }
+    }, {
+      scheduled: true,
+      timezone: "UTC"
     });
 
-    // Clean expired matches every 30 minutes
-    cron.schedule('*/30 * * * *', async () => {
-      try {
-        const expiredMatches = await Match.updateMany(
-          {
-            matchStatus: { $in: ['pending', 'verified'] },
-            expiresAt: { $lt: new Date() }
-          },
-          {
-            matchStatus: 'expired'
+    logger.info('📅 Cleanup tasks scheduled');
+  }
+
+  /**
+   * Clean up expired orders
+   */
+  async cleanupExpiredOrders() {
+    try {
+      const storage = getStorage();
+      let expiredCount = 0;
+
+      if (storage.type === 'in-memory') {
+        const now = new Date();
+        for (const [orderId, order] of storage.orders) {
+          if (new Date(order.expiry) <= now && order.status === 'active') {
+            order.status = 'expired';
+            expiredCount++;
           }
-        );
-
-        if (expiredMatches.modifiedCount > 0) {
-          logger.info(`🧹 Cleaned up ${expiredMatches.modifiedCount} expired matches`);
         }
-      } catch (error) {
-        logger.error('Error cleaning expired matches:', error);
+      } else {
+        const result = await Order.updateMany(
+          { expiry: { $lte: new Date() }, status: 'active' },
+          { status: 'expired' }
+        );
+        expiredCount = result.modifiedCount;
       }
-    });
+
+      if (expiredCount > 0) {
+        logger.info(`🧹 Cleaned up ${expiredCount} expired orders`);
+      }
+
+    } catch (error) {
+      logger.error('❌ Error cleaning up expired orders:', error);
+    }
+  }
+
+  /**
+   * Get matching engine statistics
+   */
+  getStats() {
+    return {
+      ...this.matchingStats,
+      isRunning: this.isRunning,
+      interval: this.matchingInterval
+    };
   }
 }
 
-// Export functions
-let matchingEngineInstance = null;
-
-async function startMatchingEngine(io) {
-  if (!matchingEngineInstance) {
-    matchingEngineInstance = new MatchingEngine(io);
-  }
-  await matchingEngineInstance.start();
-}
-
-function stopMatchingEngine() {
-  if (matchingEngineInstance) {
-    matchingEngineInstance.stop();
-  }
-}
-
-module.exports = {
-  MatchingEngine,
-  startMatchingEngine,
-  stopMatchingEngine
-}; 
+module.exports = MatchingEngine; 

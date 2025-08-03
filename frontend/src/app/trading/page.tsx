@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAccount, useWriteContract, useReadContract } from 'wagmi'
+import { useAccount, useWriteContract, useReadContract, useSignTypedData } from 'wagmi'
 import { parseEther, formatEther } from 'viem'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import Link from 'next/link'
@@ -73,6 +73,7 @@ export default function Trading() {
   const [ethPrice, setEthPrice] = useState<number>(2400) // Default ETH price in USD
 
   const { writeContract } = useWriteContract()
+  const { signTypedData } = useSignTypedData()
 
   // Fetch ETH price from API
   useEffect(() => {
@@ -160,7 +161,7 @@ export default function Trading() {
     
     setLoading(true)
     try {
-      // For demo: create a simple order submission to backend
+      // Create order data for EIP-712 signature
       const orderData = {
         maker: address,
         sellToken: orderType === 'buy' ? USDC_ADDRESS : WETH_ADDRESS,
@@ -168,15 +169,50 @@ export default function Trading() {
         sellAmount: parseEther(sellAmount).toString(),
         buyAmount: parseEther(buyAmount).toString(),
         expiry: Math.floor(Date.now() / 1000) + 3600, // 1 hour
-        nonce: Date.now(),
+        nonce: Date.now().toString(),
         chainId: 11155111 // Sepolia
+      }
+
+      // Create EIP-712 typed data
+      const domain = {
+        name: 'Crossline',
+        version: '1',
+        chainId: 11155111,
+        verifyingContract: CROSSLINE_CORE_ADDRESS
+      }
+
+      const types = {
+        Order: [
+          { name: 'maker', type: 'address' },
+          { name: 'sellToken', type: 'address' },
+          { name: 'buyToken', type: 'address' },
+          { name: 'sellAmount', type: 'uint256' },
+          { name: 'buyAmount', type: 'uint256' },
+          { name: 'expiry', type: 'uint256' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'chainId', type: 'uint256' }
+        ]
+      }
+
+      // Sign the order
+      const signature = await signTypedData({
+        domain,
+        types,
+        primaryType: 'Order',
+        message: orderData
+      })
+
+      // Add signature to order data
+      const signedOrderData = {
+        ...orderData,
+        signature
       }
 
       // Submit to backend API
       const response = await fetch('http://localhost:8080/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderData)
+        body: JSON.stringify(signedOrderData)
       })
 
       if (response.ok) {
@@ -184,11 +220,12 @@ export default function Trading() {
         setSellAmount('')
         setBuyAmount('')
       } else {
-        throw new Error('Failed to create order')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to create order')
       }
     } catch (error) {
       console.error('Error creating order:', error)
-      alert('Failed to create order')
+      alert('Failed to create order: ' + (error instanceof Error ? error.message : 'Unknown error'))
     } finally {
       setLoading(false)
     }

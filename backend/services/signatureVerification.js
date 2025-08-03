@@ -5,90 +5,69 @@ const logger = require('../utils/logger');
 const DOMAIN = {
   name: 'Crossline',
   version: '1',
-  chainId: 1, // Will be dynamic based on order
-  verifyingContract: '0x0000000000000000000000000000000000000000' // Placeholder, will be set after contract deployment
+  chainId: 11155111, // Sepolia
+  verifyingContract: '0x8B02e9416A0349A4934E0840485FA1Ed26FD21Ea' // CrosslineCore address
 };
 
-// EIP-712 Types
-const ORDER_TYPES = {
+// Order type definition for EIP-712
+const ORDER_TYPE = {
   Order: [
-    { name: 'userAddress', type: 'address' },
+    { name: 'maker', type: 'address' },
     { name: 'sellToken', type: 'address' },
     { name: 'buyToken', type: 'address' },
     { name: 'sellAmount', type: 'uint256' },
     { name: 'buyAmount', type: 'uint256' },
-    { name: 'sourceChain', type: 'uint256' },
-    { name: 'targetChain', type: 'uint256' },
     { name: 'expiry', type: 'uint256' },
-    { name: 'nonce', type: 'uint256' }
+    { name: 'nonce', type: 'uint256' },
+    { name: 'chainId', type: 'uint256' }
   ]
-};
-
-// Chain ID mapping
-const CHAIN_IDS = {
-  'ethereum': 1,
-  'polygon': 137,
-  'arbitrum': 42161,
-  'localhost': 31337
 };
 
 /**
  * Verify EIP-712 signature for an order
- * @param {Object} orderData - The order data to verify
- * @returns {boolean} - True if signature is valid
+ * @param {Object} orderData - The order data
+ * @param {string} signature - The signature to verify
+ * @returns {Promise<boolean>} - True if signature is valid
  */
-async function verifySignature(orderData) {
+async function verifyOrderSignature(orderData, signature) {
   try {
-    const {
-      userAddress,
-      sellToken,
-      buyToken,
-      sellAmount,
-      buyAmount,
-      sourceChain = 'ethereum',
-      targetChain = 'ethereum',
-      expiry,
-      nonce,
+    // Prepare the order object for EIP-712
+    const order = {
+      maker: orderData.maker,
+      sellToken: orderData.sellToken,
+      buyToken: orderData.buyToken,
+      sellAmount: orderData.sellAmount.toString(),
+      buyAmount: orderData.buyAmount.toString(),
+      expiry: orderData.expiry.toString(),
+      nonce: orderData.nonce.toString(),
+      chainId: orderData.chainId.toString()
+    };
+
+    // Create the typed data
+    const typedData = {
+      domain: DOMAIN,
+      types: ORDER_TYPE,
+      primaryType: 'Order',
+      message: order
+    };
+
+    // Recover the signer address from the signature
+    const recoveredAddress = ethers.verifyTypedData(
+      typedData.domain,
+      typedData.types,
+      typedData.message,
       signature
-    } = orderData;
+    );
 
-    // Prepare domain with correct chain ID
-    const domain = {
-      ...DOMAIN,
-      chainId: CHAIN_IDS[sourceChain] || 1
-    };
-
-    // Prepare order struct for hashing
-    const orderStruct = {
-      userAddress: userAddress,
-      sellToken: sellToken.address,
-      buyToken: buyToken.address,
-      sellAmount: sellAmount,
-      buyAmount: buyAmount,
-      sourceChain: CHAIN_IDS[sourceChain] || 1,
-      targetChain: CHAIN_IDS[targetChain] || 1,
-      expiry: expiry,
-      nonce: nonce
-    };
-
-    // Create typed data hash
-    const typedDataHash = ethers.TypedDataEncoder.hash(domain, ORDER_TYPES, orderStruct);
+    // Check if recovered address matches the maker
+    const isValid = recoveredAddress.toLowerCase() === orderData.maker.toLowerCase();
     
-    // Recover signer address from signature
-    const recoveredAddress = ethers.recoverAddress(typedDataHash, signature);
-    
-    // Compare with expected user address
-    const isValid = recoveredAddress.toLowerCase() === userAddress.toLowerCase();
-    
-    if (!isValid) {
-      logger.warn('Signature verification failed:', {
-        expected: userAddress.toLowerCase(),
-        recovered: recoveredAddress.toLowerCase(),
-        orderStruct,
-        domain
-      });
+    if (isValid) {
+      logger.info(`✅ Signature verified for order from ${orderData.maker}`);
+    } else {
+      logger.warn(`❌ Invalid signature for order from ${orderData.maker}. Recovered: ${recoveredAddress}`);
     }
-    
+
     return isValid;
 
   } catch (error) {
@@ -98,154 +77,71 @@ async function verifySignature(orderData) {
 }
 
 /**
- * Generate EIP-712 typed data for signing (utility for frontend)
+ * Generate EIP-712 hash for an order (for frontend signing)
  * @param {Object} orderData - The order data
- * @returns {Object} - Typed data for signing
+ * @returns {string} - The EIP-712 hash
  */
-function generateTypedData(orderData) {
-  const {
-    userAddress,
-    sellToken,
-    buyToken,
-    sellAmount,
-    buyAmount,
-    sourceChain = 'ethereum',
-    targetChain = 'ethereum',
-    expiry,
-    nonce
-  } = orderData;
+function getOrderHash(orderData) {
+  try {
+    const order = {
+      maker: orderData.maker,
+      sellToken: orderData.sellToken,
+      buyToken: orderData.buyToken,
+      sellAmount: orderData.sellAmount.toString(),
+      buyAmount: orderData.buyAmount.toString(),
+      expiry: orderData.expiry.toString(),
+      nonce: orderData.nonce.toString(),
+      chainId: orderData.chainId.toString()
+    };
 
-  const domain = {
-    ...DOMAIN,
-    chainId: CHAIN_IDS[sourceChain] || 1
-  };
+    const typedData = {
+      domain: DOMAIN,
+      types: ORDER_TYPE,
+      primaryType: 'Order',
+      message: order
+    };
 
-  const orderStruct = {
-    userAddress: userAddress,
-    sellToken: sellToken.address,
-    buyToken: buyToken.address,
-    sellAmount: sellAmount,
-    buyAmount: buyAmount,
-    sourceChain: CHAIN_IDS[sourceChain] || 1,
-    targetChain: CHAIN_IDS[targetChain] || 1,
-    expiry: expiry,
-    nonce: nonce
+    return ethers.TypedDataEncoder.hash(
+      typedData.domain,
+      typedData.types,
+      typedData.message
+    );
+
+  } catch (error) {
+    logger.error('Error generating order hash:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get the typed data structure for frontend signing
+ * @param {Object} orderData - The order data
+ * @returns {Object} - The EIP-712 typed data
+ */
+function getTypedDataForSigning(orderData) {
+  const order = {
+    maker: orderData.maker,
+    sellToken: orderData.sellToken,
+    buyToken: orderData.buyToken,
+    sellAmount: orderData.sellAmount.toString(),
+    buyAmount: orderData.buyAmount.toString(),
+    expiry: orderData.expiry.toString(),
+    nonce: orderData.nonce.toString(),
+    chainId: orderData.chainId.toString()
   };
 
   return {
-    types: ORDER_TYPES,
+    domain: DOMAIN,
+    types: ORDER_TYPE,
     primaryType: 'Order',
-    domain: domain,
-    message: orderStruct
+    message: order
   };
-}
-
-/**
- * Verify cancellation signature
- * @param {string} orderId - Order ID to cancel
- * @param {string} userAddress - User address
- * @param {string} signature - Signature
- * @returns {boolean} - True if valid
- */
-async function verifyCancellationSignature(orderId, userAddress, signature) {
-  try {
-    // Simple message signing for cancellation
-    const message = `Cancel order: ${orderId}`;
-    const messageHash = ethers.hashMessage(message);
-    const recoveredAddress = ethers.recoverAddress(messageHash, signature);
-    
-    return recoveredAddress.toLowerCase() === userAddress.toLowerCase();
-  } catch (error) {
-    logger.error('Error verifying cancellation signature:', error);
-    return false;
-  }
-}
-
-/**
- * Create signature verification middleware
- * @param {boolean} required - Whether signature is required
- */
-function requireSignature(required = true) {
-  return async (req, res, next) => {
-    if (!required) {
-      return next();
-    }
-
-    try {
-      const isValid = await verifySignature(req.body);
-      
-      if (!isValid) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid signature'
-        });
-      }
-      
-      next();
-    } catch (error) {
-      logger.error('Signature verification middleware error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Signature verification failed'
-      });
-    }
-  };
-}
-
-/**
- * Generate nonce for order
- * @param {string} userAddress - User address
- * @returns {string} - Generated nonce
- */
-function generateNonce(userAddress) {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2);
-  return `${userAddress.toLowerCase()}-${timestamp}-${random}`;
-}
-
-/**
- * Validate nonce format
- * @param {string} nonce - Nonce to validate
- * @param {string} userAddress - Expected user address
- * @returns {boolean} - True if valid format
- */
-function validateNonce(nonce, userAddress) {
-  if (!nonce || typeof nonce !== 'string') {
-    return false;
-  }
-  
-  const parts = nonce.split('-');
-  if (parts.length !== 3) {
-    return false;
-  }
-  
-  const [address, timestamp, random] = parts;
-  
-  // Check address matches
-  if (address !== userAddress.toLowerCase()) {
-    return false;
-  }
-  
-  // Check timestamp is reasonable (not too old, not in future)
-  const ts = parseInt(timestamp);
-  const now = Date.now();
-  const maxAge = 24 * 60 * 60 * 1000; // 24 hours
-  
-  if (isNaN(ts) || ts > now || ts < (now - maxAge)) {
-    return false;
-  }
-  
-  return true;
 }
 
 module.exports = {
-  verifySignature,
-  generateTypedData,
-  verifyCancellationSignature,
-  requireSignature,
-  generateNonce,
-  validateNonce,
+  verifyOrderSignature,
+  getOrderHash,
+  getTypedDataForSigning,
   DOMAIN,
-  ORDER_TYPES,
-  CHAIN_IDS
+  ORDER_TYPE
 }; 
