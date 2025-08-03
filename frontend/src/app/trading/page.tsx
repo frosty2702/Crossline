@@ -7,10 +7,17 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import Link from 'next/link'
 import { StarsBackground } from '@/components/animate-ui/backgrounds/stars'
 
-// Contract addresses (from your deployments)
-const CROSSLINE_CORE_ADDRESS = '0x8B02e9416A0349A4934E0840485FA1Ed26FD21Ea'
-const WETH_ADDRESS = '0xA895E03B50672Bb7e23e33875D9d3223A04074BF' // Our Mock WETH on Sepolia
-const USDC_ADDRESS = '0x54EcCfc920a98f97cb2a3b375e6e4cd119e705bC' // Our Mock USDC on Sepolia
+// Contract addresses - will be set based on network
+let CROSSLINE_CORE_ADDRESS = '0x8B02e9416A0349A4934E0840485FA1Ed26FD21Ea' // Sepolia default
+let WETH_ADDRESS = '0xA895E03B50672Bb7e23e33875D9d3223A04074BF' // Sepolia default
+let USDC_ADDRESS = '0x54EcCfc920a98f97cb2a3b375e6e4cd119e705bC' // Sepolia default
+
+// Monad Testnet addresses (placeholder - you'll need to deploy these)
+const MONAD_ADDRESSES = {
+  CROSSLINE_CORE: '0x0000000000000000000000000000000000000000', // TODO: Deploy on Monad
+  WETH: '0x0000000000000000000000000000000000000000', // TODO: Deploy on Monad
+  USDC: '0x0000000000000000000000000000000000000000' // TODO: Deploy on Monad
+}
 
 // Simplified ABI for demo
 const CROSSLINE_ABI = [
@@ -65,7 +72,7 @@ const ERC20_ABI = [
 ]
 
 export default function Trading() {
-  const { isConnected, address } = useAccount()
+  const { isConnected, address, chainId } = useAccount()
   const [orderType, setOrderType] = useState<'buy' | 'sell'>('buy')
   const [sellAmount, setSellAmount] = useState('')
   const [buyAmount, setBuyAmount] = useState('')
@@ -74,6 +81,25 @@ export default function Trading() {
 
   const { writeContract } = useWriteContract()
   const { signTypedData } = useSignTypedData()
+
+  // Get contract addresses based on current network
+  const getContractAddresses = () => {
+    if (chainId === 10143) { // Monad Testnet
+      return {
+        crosslineCore: '0x0000000000000000000000000000000000000000' as `0x${string}`, // TODO: Deploy on Monad
+        weth: '0x0000000000000000000000000000000000000000' as `0x${string}`, // TODO: Deploy on Monad
+        usdc: '0x0000000000000000000000000000000000000000' as `0x${string}` // TODO: Deploy on Monad
+      }
+    } else { // Sepolia or default
+      return {
+        crosslineCore: '0x8B02e9416A0349A4934E0840485FA1Ed26FD21Ea' as `0x${string}`,
+        weth: '0xA895E03B50672Bb7e23e33875D9d3223A04074BF' as `0x${string}`,
+        usdc: '0x54EcCfc920a98f97cb2a3b375e6e4cd119e705bC' as `0x${string}`
+      }
+    }
+  }
+
+  const contractAddresses = getContractAddresses()
 
   // Fetch ETH price from API
   useEffect(() => {
@@ -137,7 +163,7 @@ export default function Trading() {
 
   // Read balances
   const { data: wethBalance } = useReadContract({
-    address: WETH_ADDRESS,
+    address: contractAddresses.weth,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
@@ -147,7 +173,7 @@ export default function Trading() {
   })
 
   const { data: usdcBalance } = useReadContract({
-    address: USDC_ADDRESS,
+    address: contractAddresses.usdc,
     abi: ERC20_ABI,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
@@ -164,8 +190,8 @@ export default function Trading() {
       // Create order data for EIP-712 signature
       const orderData = {
         maker: address,
-        sellToken: orderType === 'buy' ? USDC_ADDRESS : WETH_ADDRESS,
-        buyToken: orderType === 'buy' ? WETH_ADDRESS : USDC_ADDRESS,
+        sellToken: orderType === 'buy' ? contractAddresses.usdc : contractAddresses.weth,
+        buyToken: orderType === 'buy' ? contractAddresses.weth : contractAddresses.usdc,
         sellAmount: parseEther(sellAmount).toString(),
         buyAmount: parseEther(buyAmount).toString(),
         expiry: Math.floor(Date.now() / 1000) + 3600, // 1 hour
@@ -178,7 +204,7 @@ export default function Trading() {
         name: 'Crossline',
         version: '1',
         chainId: 11155111,
-        verifyingContract: CROSSLINE_CORE_ADDRESS
+        verifyingContract: contractAddresses.crosslineCore
       }
 
       const types = {
@@ -239,7 +265,7 @@ export default function Trading() {
         address: token as `0x${string}`,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [CROSSLINE_CORE_ADDRESS, parseEther('1000000')], // Large approval
+        args: [contractAddresses.crosslineCore, parseEther('1000000')], // Large approval
       })
       alert('Approval transaction sent!')
     } catch (error) {
@@ -255,7 +281,7 @@ export default function Trading() {
       // Mint WETH first
       console.log('Minting WETH...')
       await writeContract({
-        address: WETH_ADDRESS,
+        address: contractAddresses.weth,
         abi: [...ERC20_ABI, {
           "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}],
           "name": "mint",
@@ -272,7 +298,7 @@ export default function Trading() {
         try {
           console.log('Minting USDC...')
           await writeContract({
-            address: USDC_ADDRESS,
+            address: contractAddresses.usdc,
             abi: [...ERC20_ABI, {
               "inputs": [{"name": "to", "type": "address"}, {"name": "amount", "type": "uint256"}],
               "name": "mint",
@@ -296,6 +322,9 @@ export default function Trading() {
       alert('Token minting failed. Make sure you:\n• Are on Sepolia testnet\n• Have ETH for gas\n• Approve transactions in MetaMask')
     }
   }
+
+  // Show warning if on Monad (contracts not deployed there)
+  const showNetworkWarning = chainId === 10143
 
   if (!isConnected) {
     return (
@@ -332,6 +361,23 @@ export default function Trading() {
         <div className="max-w-4xl mx-auto">
           <h1 className="text-3xl sm:text-4xl font-bold text-white mb-6 sm:mb-8">Cross-Chain Trading</h1>
           
+          {/* Network Warning */}
+          {showNetworkWarning && (
+            <div className="glass-card-prominent rounded-2xl p-6 mb-6 border-red-400/50">
+              <div className="flex items-center space-x-3">
+                <div className="w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-sm font-bold">!</span>
+                </div>
+                <div>
+                  <h3 className="text-red-400 font-semibold">Contracts Not Deployed on Monad</h3>
+                  <p className="text-gray-300 text-sm">
+                    Switch to Sepolia Testnet to use the deployed contracts and mock tokens.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
             {/* Order Form */}
             <div className="glass-card-prominent rounded-2xl p-4 sm:p-6">
@@ -403,7 +449,7 @@ export default function Trading() {
               {/* Action Buttons */}
               <div className="space-y-3">
                 <button
-                  onClick={() => handleApprove(orderType === 'buy' ? USDC_ADDRESS : WETH_ADDRESS)}
+                  onClick={() => handleApprove(orderType === 'buy' ? contractAddresses.usdc : contractAddresses.weth)}
                   className="w-full sm:w-auto sm:flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 sm:py-3 px-4 rounded-lg transition-colors border border-blue-400/50 text-sm sm:text-base"
                 >
                   Approve {orderType === 'buy' ? 'USDC' : 'WETH'}

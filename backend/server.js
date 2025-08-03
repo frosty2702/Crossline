@@ -106,8 +106,8 @@ async function startServer() {
     // Start HTTP server
     server.listen(PORT, () => {
       logger.info(`🚀 Crossline backend server running on port ${PORT}`);
-      logger.info(`📊 Environment: ${process.env.NODE_ENV}`);
-      logger.info(`🔗 Database: ${process.env.MONGODB_URI ? 'Connected' : 'Not configured'}`);
+      logger.info(`📊 Environment: ${process.env.NODE_ENV || 'production'}`);
+      logger.info(`🔗 Database: MongoDB Connected (${mongoose.connection.name})`);
     });
   } catch (error) {
     logger.error('Failed to start server:', error);
